@@ -36,15 +36,6 @@ TripAI/
 ├── trip-data.md
 ├── architecture.md
 └── roadmap.md
-
-## Commands
-- Frontend dev: `cd apps/web && npm run dev` (port 3000)
-- Frontend build: `cd apps/web && npm run build`
-- Type check: `cd apps/web && npx tsc --noEmit`
-- API dev: `cd apps/api && source venv/bin/activate && uvicorn main:app --reload` (port 8000)
-- API tests: `cd apps/api && pytest -v`
-- Frontend tests: `cd apps/web && npm test`
-
 ## What's built
 - [x] Next.js scaffold with TypeScript + Tailwind
 - [x] shadcn/ui components (button, badge, checkbox, progress, input, separator)
@@ -88,8 +79,43 @@ title, plan (text — this gets embedded into RAG),
 intensity (light|moderate|busy|travel|special),
 is_special (boolean), special_label (text nullable)
 
-## Trip data
-Full booking list and itinerary: see docs/trip-data.md
+## The 14 bookings (Kura Europe 2026)
+| id  | title | urgency | est_cost | deadline | discount_code |
+|-----|-------|---------|----------|----------|---------------|
+| b1  | Flights SFO→LHR + MXP→SFO | fire | 4800 | This week | — |
+| b2  | Eurostar London→Paris Jun 23 | fire | 400 | This week | Standard Premier |
+| b3  | Hotel Metropole Interlaken Jun 27-Jul 1 | fire | 1300 | This week | — |
+| b4  | Skydive Interlaken deposit Jul 1 | fire | 100 | This week | — |
+| b5  | Crowne Plaza London Kings Cross Jun 20-22 | now | 870 | This week | 100270748 |
+| b6  | Novotel Paris Les Halles Jun 23-26 | now | 1000 | This week | SC196337864 |
+| b7  | Hyatt Centric Milan Centrale Jul 2-4 | now | 735 | This week | 151340 |
+| b8  | Train Paris→Basel→Interlaken Jun 27 | now | 280 | This week | — |
+| b9  | Eiffel Tower tickets Jun 24 | soon | 150 | Apr 25 | — |
+| b10 | Louvre timed entry Jun 25 9am | soon | 100 | Late April | — |
+| b11 | Anniversary dinner Jun 26 Paris | soon | 300 | May | — |
+| b12 | Train Interlaken→Milan Jul 2 | soon | 200 | May | — |
+| b13 | Milan Duomo rooftop Jul 3 | soon | 80 | May | — |
+| b14 | Airalo eSIM 4 devices | soon | 90 | Jun 12 | — |
+
+## The 17 itinerary days
+| date    | city        | country | intensity | notes |
+|---------|-------------|---------|-----------|-------|
+| Jun 20  | London      | UK      | light     | Arrive LHR, jet lag buffer |
+| Jun 21  | London      | UK      | moderate  | London Bridge, Borough Market, South Bank |
+| Jun 22  | London      | UK      | busy      | Westminster, Big Ben, Natural History Museum |
+| Jun 23  | Paris       | France  | travel    | Eurostar morning, arrive Paris, Marais |
+| Jun 24  | Paris       | France  | busy      | Eiffel Tower, Champ de Mars, Seine |
+| Jun 25  | Paris       | France  | busy      | Louvre 9am, Musée d'Orsay afternoon |
+| Jun 26  | Paris       | France  | special   | Anniversary — Montmartre, dinner at Septime |
+| Jun 27  | Interlaken  | CH      | travel    | Birthday — TGV Paris→Basel→Interlaken |
+| Jun 28  | Interlaken  | CH      | light     | Lake Brienz boat, rest |
+| Jun 29  | Interlaken  | CH      | busy      | Titlis mountain day (Engelberg) |
+| Jun 30  | Interlaken  | CH      | light     | Grindelwald, flex day |
+| Jul 1   | Interlaken  | CH      | busy      | Skydiving — parents only |
+| Jul 2   | Milan       | Italy   | travel    | Train Interlaken→Milan, Navigli evening |
+| Jul 3   | Milan       | Italy   | moderate  | Duomo rooftop, Brera, Last Supper optional |
+| Jul 4   | Milan       | Italy   | light     | Flex day, pack |
+| Jul 5   | (transit)   | —       | travel    | Depart MXP→SFO |
 
 ## Meta discount codes (Kura family)
 - Accor: Company META · Code SC196337864 · Access FA564US684 (15% off)
@@ -138,19 +164,93 @@ Reference: https://github.com/isolis/principles
    - LLM-as-judge with golden dataset of 20 trip Q&A pairs
 
 ## Session goal format
-Start every Claude Code session with:
-GOAL: [one specific deliverable]
-CONTEXT: [which docs/files are relevant]
-DONE WHEN: [specific verifiable outcome]
-DO NOT: [guardrails — what to avoid]
-Example:
-GOAL: Create Supabase schema and seed all 14 bookings + 17 itinerary days
-CONTEXT: CLAUDE.md bookings table, itinerary table, 14 bookings list, 17 days list
-DONE WHEN: Tables exist in Supabase, seed script runs without errors,
-SELECT COUNT(*) FROM bookings returns 14
-DO NOT: Use sequential integer IDs, skip trip_id on any table,
-create tables without created_at/updated_at
+
+Every session has TWO phases:
+
+### Phase 1 — Plan (always first)
+Start with:
+"Before writing any code, show me your plan:
+- What files will you create or modify?
+- What are the key functions/components?
+- What could go wrong?
+- Any questions before starting?"
+
+Review and approve the plan before saying "proceed."
+
+### Phase 2 — Execute
+Only after plan is approved:
+"Plan looks good. Proceed with TDD — tests first."
+
+GOAL: [deliverable]
+CONTEXT: [relevant files]
+DONE WHEN: [verifiable outcomes]
+DO NOT: [guardrails]
+
+## Deployment
+- Frontend auto-deploys to Vercel on push to `main`
+- Every feature branch gets a Vercel preview URL automatically
+- Backend deploys to Railway on push to `main`
+
+## Session phases
+1. **Plan** — before any code, get a written plan (files, functions, risks, questions). Approve it.
+2. **Execute** — after approval only. TDD: tests first, then implementation.
+
+## Code review checklist
+Before every commit, verify:
+1. `npx tsc --noEmit` passes — no TypeScript errors
+2. All tests pass: `npm test` (frontend) and `pytest -v` (backend)
+3. No `any` types introduced
+4. Every new DB query filters by `trip_id`
+5. No business logic added to `page.tsx`
+6. No direct Supabase calls from frontend code
+
 ## Current session state
-- Supabase project: being created
-- Next immediate task: write schema.sql and seed.sql, run in Supabase
-- Then: FastAPI scaffold, first API route GET /trips/{trip_id}/bookings
+- Supabase: live, all 5 tables seeded (17 itinerary days, 14 bookings)
+- FastAPI: running on port 8000, /health and /trips/{trip_id}/bookings working
+- Tests: 16 passing (pytest -v green)
+- Vercel: not yet configured
+- Next task: test bookings endpoint with real trip UUID from Supabase,
+  then wire Next.js frontend to API (replace hardcoded data with real API call)
+- Then: Vercel deploy + GitHub Actions CI
+
+## Testing philosophy
+
+### Pyramid
+Unit tests (fast, isolated, mock external deps)  → most tests here
+Integration tests (real DB, real API calls)       → key flows only  
+E2E / UI tests (Playwright, full browser)         → critical paths only
+Evals (LLM-as-judge, RAGAS)                       → all AI features
+
+### Rules — non-negotiable
+1. Tests written BEFORE implementation (TDD red→green→refactor)
+2. Every API route has a unit test and an integration test
+3. Every React component has a unit test (React Testing Library)
+4. Every AI feature (RAG, agent) has an eval — no exceptions
+5. CI blocks merge if any test fails
+6. Test file lives next to the code it tests:
+   apps/api/tests/test_bookings.py  ← tests for routes/bookings.py
+   apps/web/__tests__/BookingRow.test.tsx ← tests for BookingRow.tsx
+
+### Test stack
+Backend:
+- pytest + httpx (unit + integration)
+- pytest-mock (mocking Supabase)
+- factory-boy (test data factories)
+
+Frontend:
+- Jest + React Testing Library (unit)
+- Playwright (E2E)
+
+AI/evals:
+- Braintrust or custom harness
+- RAGAS for RAG pipeline
+- LLM-as-judge for agent outputs
+- Golden dataset: 20 Q&A pairs minimum before shipping RAG
+
+### What "done" means
+A feature is NOT done until:
+- Unit tests pass
+- Integration test passes  
+- For AI features: eval score > 0.7 on golden dataset
+- No TypeScript errors
+- No Python type errors (mypy clean)
