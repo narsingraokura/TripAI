@@ -1,8 +1,9 @@
+import json
 from unittest.mock import MagicMock
 
 from fastapi.testclient import TestClient
 
-from main import app, get_supabase
+from main import app, get_anthropic, get_supabase
 
 TRIP_ID = "550e8400-e29b-41d4-a716-446655440000"
 NONEXISTENT_TRIP_ID = "00000000-0000-0000-0000-000000000000"
@@ -268,3 +269,281 @@ def test_patch_itinerary_invalid_intensity_returns_422() -> None:
         json={"intensity": "extreme"},
     )
     assert response.status_code == 422
+
+
+# ── POST /trips/{trip_id}/itinerary/{date}/suggest ────────────────────────────
+
+DATE_TITLIS = "2026-06-29"
+
+MOCK_TITLIS_DAY = {
+    "id": "day-uuid-titlis",
+    "trip_id": TRIP_ID,
+    "date": DATE_TITLIS,
+    "city": "Interlaken",
+    "country": "CH",
+    "title": "Titlis Mountain Day",
+    "plan": "Full day excursion to Mount Titlis via Engelberg. Take the Rotair (world's first revolving cable car). Snow activities at the top. Glacier walk. Return by evening.",
+    "intensity": "busy",
+    "is_special": False,
+    "special_label": None,
+}
+
+MOCK_BOOKINGS_FOR_BUDGET = [
+    {
+        "id": "b1",
+        "trip_id": TRIP_ID,
+        "title": "Flights SFO→LHR",
+        "subtitle": "4 seats",
+        "category": "flights",
+        "urgency": "fire",
+        "status": "booked",
+        "estimated_cost": 4800.00,
+        "actual_cost": 4800.00,
+        "deadline": "This week",
+        "discount_code": None,
+        "card_tip": "Amex Gold 3X MR",
+        "booked_at": "2026-01-10T00:00:00+00:00",
+    },
+    {
+        "id": "b2",
+        "trip_id": TRIP_ID,
+        "title": "Titlis Mountain Day",
+        "subtitle": "Gondola + Rotair",
+        "category": "activities",
+        "urgency": "now",
+        "status": "pending",
+        "estimated_cost": 360.00,
+        "actual_cost": None,
+        "deadline": "Mar 2026",
+        "discount_code": None,
+        "card_tip": "Venture X (CHF)",
+        "booked_at": None,
+    },
+]
+
+# one cheaper (−220), one similar-cost (−30), one pricier (+180)
+VALID_SUGGESTIONS = [
+    {
+        "title": "Harder Kulm Viewpoint",
+        "description": "Take the funicular up to Harder Kulm for panoramic views over Interlaken and the Eiger.",
+        "why_fits": "Kid-friendly, half-day activity, easy funicular ride with no altitude sickness concerns.",
+        "cost_delta": -220,
+        "intensity": "light",
+        "booking_required": False,
+    },
+    {
+        "title": "Lake Brienz Boat Tour",
+        "description": "Cruise the turquoise Lake Brienz to Giessbach Falls and explore the lakeside village.",
+        "why_fits": "Relaxing boat ride kids love, no strenuous hiking, stunning alpine scenery.",
+        "cost_delta": -30,
+        "intensity": "light",
+        "booking_required": False,
+    },
+    {
+        "title": "Jungfraujoch Top of Europe",
+        "description": "Journey to the highest railway station in Europe at 3,454m for glacier views.",
+        "why_fits": "Iconic Swiss landmark with indoor glacier cave — memorable and manageable for kids.",
+        "cost_delta": 180,
+        "intensity": "busy",
+        "booking_required": True,
+    },
+]
+
+
+def _make_suggest_supabase_mock(trip_found: bool = True, day_found: bool = True) -> MagicMock:
+    mock = MagicMock()
+
+    trip_response = MagicMock()
+    trip_response.data = [{"id": TRIP_ID}] if trip_found else []
+
+    day_response = MagicMock()
+    day_response.data = [MOCK_TITLIS_DAY] if day_found else []
+
+    bookings_response = MagicMock()
+    bookings_response.data = MOCK_BOOKINGS_FOR_BUDGET if trip_found else []
+
+    def table_side_effect(table_name: str) -> MagicMock:
+        chain = MagicMock()
+        if table_name == "trips":
+            chain.select.return_value.eq.return_value.execute.return_value = trip_response
+        elif table_name == "itinerary_days":
+            # .select("*").eq("date", date).eq("trip_id", trip_id).execute()
+            chain.select.return_value.eq.return_value.eq.return_value.execute.return_value = day_response
+        else:  # bookings
+            chain.select.return_value.eq.return_value.execute.return_value = bookings_response
+        return chain
+
+    mock.table.side_effect = table_side_effect
+    return mock
+
+
+def _make_claude_mock(suggestions: list = VALID_SUGGESTIONS) -> MagicMock:
+    mock_client = MagicMock()
+    mock_content = MagicMock()
+    mock_content.text = json.dumps(suggestions)
+    mock_client.messages.create.return_value.content = [mock_content]
+    return mock_client
+
+
+def _suggest_client(
+    trip_found: bool = True,
+    day_found: bool = True,
+    suggestions: list = VALID_SUGGESTIONS,
+) -> TestClient:
+    app.dependency_overrides[get_supabase] = lambda: _make_suggest_supabase_mock(trip_found, day_found)
+    app.dependency_overrides[get_anthropic] = lambda: _make_claude_mock(suggestions)
+    return TestClient(app)
+
+
+# Basic shape
+
+def test_suggest_returns_200() -> None:
+    client = _suggest_client()
+    response = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest")
+    assert response.status_code == 200
+
+
+def test_suggest_response_has_date_city_suggestions_keys() -> None:
+    client = _suggest_client()
+    body = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest").json()
+    assert "date" in body
+    assert "city" in body
+    assert "suggestions" in body
+
+
+def test_suggest_response_date_and_city_match_day() -> None:
+    client = _suggest_client()
+    body = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest").json()
+    assert body["date"] == DATE_TITLIS
+    assert body["city"] == "Interlaken"
+
+
+def test_suggest_returns_exactly_3_suggestions() -> None:
+    client = _suggest_client()
+    suggestions = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest").json()["suggestions"]
+    assert len(suggestions) == 3
+
+
+# Suggestion shape
+
+def test_each_suggestion_has_all_6_fields() -> None:
+    client = _suggest_client()
+    suggestions = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest").json()["suggestions"]
+    required = {"title", "description", "why_fits", "cost_delta", "intensity", "booking_required"}
+    for s in suggestions:
+        assert required.issubset(s.keys())
+
+
+def test_suggestion_intensity_values_are_valid() -> None:
+    client = _suggest_client()
+    suggestions = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest").json()["suggestions"]
+    valid = {"light", "moderate", "busy"}
+    for s in suggestions:
+        assert s["intensity"] in valid
+
+
+def test_suggestion_cost_delta_is_integer() -> None:
+    client = _suggest_client()
+    suggestions = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest").json()["suggestions"]
+    for s in suggestions:
+        assert isinstance(s["cost_delta"], int)
+
+
+def test_suggestion_booking_required_is_boolean() -> None:
+    client = _suggest_client()
+    suggestions = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest").json()["suggestions"]
+    for s in suggestions:
+        assert isinstance(s["booking_required"], bool)
+
+
+# Eval: Jun 29 Titlis day must include cheaper + similar-cost alternatives
+
+def test_titlis_suggestions_include_at_least_one_cheaper_option() -> None:
+    client = _suggest_client()
+    suggestions = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest").json()["suggestions"]
+    cost_deltas = [s["cost_delta"] for s in suggestions]
+    assert any(d < 0 for d in cost_deltas), f"Expected cheaper option (negative delta), got: {cost_deltas}"
+
+
+def test_titlis_suggestions_include_at_least_one_similar_cost_option() -> None:
+    client = _suggest_client()
+    suggestions = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest").json()["suggestions"]
+    cost_deltas = [s["cost_delta"] for s in suggestions]
+    assert any(abs(d) <= 50 for d in cost_deltas), f"Expected similar-cost option (delta ±50), got: {cost_deltas}"
+
+
+# Claude receives correct context
+
+def test_claude_called_with_city_in_user_message() -> None:
+    mock_supabase = _make_suggest_supabase_mock()
+    mock_claude = _make_claude_mock()
+    app.dependency_overrides[get_supabase] = lambda: mock_supabase
+    app.dependency_overrides[get_anthropic] = lambda: mock_claude
+    client = TestClient(app)
+    client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest")
+    user_content = mock_claude.messages.create.call_args.kwargs["messages"][0]["content"]
+    assert "Interlaken" in user_content
+
+
+def test_claude_called_with_budget_in_user_message() -> None:
+    mock_supabase = _make_suggest_supabase_mock()
+    mock_claude = _make_claude_mock()
+    app.dependency_overrides[get_supabase] = lambda: mock_supabase
+    app.dependency_overrides[get_anthropic] = lambda: mock_claude
+    client = TestClient(app)
+    client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest")
+    user_content = mock_claude.messages.create.call_args.kwargs["messages"][0]["content"]
+    assert "budget" in user_content.lower() or "remaining" in user_content.lower()
+
+
+def test_claude_called_with_temperature_07() -> None:
+    mock_supabase = _make_suggest_supabase_mock()
+    mock_claude = _make_claude_mock()
+    app.dependency_overrides[get_supabase] = lambda: mock_supabase
+    app.dependency_overrides[get_anthropic] = lambda: mock_claude
+    client = TestClient(app)
+    client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest")
+    assert mock_claude.messages.create.call_args.kwargs["temperature"] == 0.7
+
+
+# 404 cases
+
+def test_suggest_trip_not_found_returns_404() -> None:
+    client = _suggest_client(trip_found=False)
+    response = client.post(f"/trips/{NONEXISTENT_TRIP_ID}/itinerary/{DATE_TITLIS}/suggest")
+    assert response.status_code == 404
+
+
+def test_suggest_day_not_found_returns_404() -> None:
+    client = _suggest_client(day_found=False)
+    response = client.post(f"/trips/{TRIP_ID}/itinerary/2026-01-01/suggest")
+    assert response.status_code == 404
+
+
+# 502: malformed Claude response
+
+def test_malformed_json_from_claude_returns_502() -> None:
+    mock_supabase = _make_suggest_supabase_mock()
+    mock_claude = MagicMock()
+    mock_content = MagicMock()
+    mock_content.text = "here are some great ideas: Harder Kulm, boat tour, Jungfraujoch"
+    mock_claude.messages.create.return_value.content = [mock_content]
+    app.dependency_overrides[get_supabase] = lambda: mock_supabase
+    app.dependency_overrides[get_anthropic] = lambda: mock_claude
+    client = TestClient(app)
+    response = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest")
+    assert response.status_code == 502
+
+
+def test_wrong_suggestion_count_returns_502() -> None:
+    two_suggestions = VALID_SUGGESTIONS[:2]
+    mock_supabase = _make_suggest_supabase_mock()
+    mock_claude = MagicMock()
+    mock_content = MagicMock()
+    mock_content.text = json.dumps(two_suggestions)
+    mock_claude.messages.create.return_value.content = [mock_content]
+    app.dependency_overrides[get_supabase] = lambda: mock_supabase
+    app.dependency_overrides[get_anthropic] = lambda: mock_claude
+    client = TestClient(app)
+    response = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest")
+    assert response.status_code == 502

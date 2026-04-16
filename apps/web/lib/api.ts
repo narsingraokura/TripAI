@@ -85,10 +85,13 @@ export type ItineraryDayPatch = {
   intensity?: Intensity
 }
 
+type ItineraryApiResponse = { days: ItineraryDay[] }
+
 export async function fetchItinerary(): Promise<ItineraryDay[]> {
   const res = await fetch(`${getApiBase()}/trips/${getTripId()}/itinerary`)
   if (!res.ok) throw new Error(`API error: ${res.status}`)
-  return res.json() as Promise<ItineraryDay[]>
+  const data = (await res.json()) as ItineraryApiResponse
+  return data.days
 }
 
 export async function patchItineraryDay(

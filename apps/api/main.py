@@ -1,6 +1,8 @@
+import json
 import os
 from typing import Literal, Optional
 
+import anthropic
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,12 +21,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Dependency ────────────────────────────────────────────────────────────────
+# ── Dependencies ─────────────────────────────────────────────────────────────
 
 def get_supabase() -> Client:
     url = os.getenv("SUPABASE_URL", "")
     key = os.getenv("SUPABASE_KEY", "")
     return create_client(url, key)
+
+
+def get_anthropic() -> anthropic.Anthropic:
+    return anthropic.Anthropic()
 
 
 # ── Pydantic models ───────────────────────────────────────────────────────────
@@ -67,6 +73,21 @@ class ItineraryResponse(BaseModel):
     days: list[ItineraryDay]
 
 
+class Suggestion(BaseModel):
+    title: str
+    description: str
+    why_fits: str
+    cost_delta: int
+    intensity: Literal["light", "moderate", "busy"]
+    booking_required: bool
+
+
+class SuggestResponse(BaseModel):
+    date: str
+    city: str
+    suggestions: list[Suggestion]
+
+
 class BookingStatusUpdate(BaseModel):
     status: str
 
@@ -85,9 +106,35 @@ class BookingsResponse(BaseModel):
     summary: BookingSummary
 
 
-# ── Routes ────────────────────────────────────────────────────────────────────
+# ── Constants ────────────────────────────────────────────────────────────────
 
 URGENCY_ORDER = {"fire": 0, "now": 1, "soon": 2}
+
+BUDGET_CAP = 25_000
+
+SUGGEST_SYSTEM_PROMPT = """\
+You are a travel activity advisor for the Kura family Europe 2026 trip.
+
+Family profile:
+- 4 travelers: 2 adults (Indian passports, US H-1B visa), 2 children ages 9 and 11 (US passports)
+- Diet: Hindu non-vegetarian — no beef, no pork
+- Total trip budget cap: $25,000 USD
+
+Instructions:
+- Suggest exactly 3 alternative activities for the given day
+- Respond ONLY with a JSON array of exactly 3 objects — no prose, no markdown fences, no explanation
+- Each object must have exactly these fields:
+  - "title" (string): Short alternative activity name
+  - "description" (string): 1-2 sentences on what the family would do
+  - "why_fits" (string): Why this works for these specific travelers (kids, diet, budget, visas)
+  - "cost_delta" (integer): Cost difference in USD vs the current activity (+more expensive, −cheaper, 0=same)
+  - "intensity" (string): Exactly one of "light", "moderate", "busy"
+  - "booking_required" (boolean): Whether advance booking is needed
+- Include at least one cheaper option (negative cost_delta) and at least one similar-cost option (cost_delta within ±50 USD)
+"""
+
+
+# ── Routes ────────────────────────────────────────────────────────────────────
 
 
 @app.get("/health")
@@ -220,3 +267,74 @@ def patch_itinerary_day(
         .execute()
     )
     return ItineraryDay(**updated.data[0])
+
+
+@app.post("/trips/{trip_id}/itinerary/{date}/suggest", response_model=SuggestResponse)
+def suggest_itinerary_alternatives(
+    trip_id: str,
+    date: str,
+    supabase: Client = Depends(get_supabase),
+    claude: anthropic.Anthropic = Depends(get_anthropic),
+) -> SuggestResponse:
+    trip_result = supabase.table("trips").select("id").eq("id", trip_id).execute()
+    if not trip_result.data:
+        raise HTTPException(status_code=404, detail=f"Trip {trip_id} not found")
+
+    day_result = (
+        supabase.table("itinerary_days")
+        .select("*")
+        .eq("date", date)
+        .eq("trip_id", trip_id)
+        .execute()
+    )
+    if not day_result.data:
+        raise HTTPException(status_code=404, detail=f"No itinerary day found for {date}")
+
+    day = day_result.data[0]
+
+    bookings_result = supabase.table("bookings").select("*").eq("trip_id", trip_id).execute()
+    locked_in = sum(
+        (b["actual_cost"] if b["actual_cost"] is not None else b["estimated_cost"])
+        for b in bookings_result.data
+        if b["status"] == "booked"
+    )
+    budget_remaining = BUDGET_CAP - locked_in
+
+    user_message = (
+        f"Date: {date}\n"
+        f"City: {day['city']}, {day['country']}\n"
+        f"Current plan: {day['title']}. {day['plan']}\n"
+        f"Current intensity: {day['intensity']}\n"
+        f"Budget locked in so far: ${locked_in:,.0f} of ${BUDGET_CAP:,} "
+        f"(remaining: ${budget_remaining:,.0f})\n\n"
+        "Suggest 3 alternative activities for this day."
+    )
+
+    response = claude.messages.create(
+        model="claude-3-5-sonnet-20241022",
+        max_tokens=1500,
+        temperature=0.7,
+        system=SUGGEST_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": user_message}],
+    )
+
+    raw_text = response.content[0].text
+
+    try:
+        suggestions_data = json.loads(raw_text)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=502, detail="AI returned malformed JSON. Please try again.")
+
+    if not isinstance(suggestions_data, list) or len(suggestions_data) != 3:
+        count = len(suggestions_data) if isinstance(suggestions_data, list) else "non-list"
+        raise HTTPException(
+            status_code=502,
+            detail=f"AI returned {count} suggestions, expected exactly 3.",
+        )
+
+    try:
+        suggestions = [Suggestion(**s) for s in suggestions_data]
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"AI response failed validation: {exc}") from exc
+
+    return SuggestResponse(date=date, city=day["city"], suggestions=suggestions)

@@ -220,6 +220,10 @@ Unit tests (fast, isolated, mock external deps)  → most tests here
 Integration tests (real DB, real API calls)       → key flows only  
 E2E / UI tests (Playwright, full browser)         → critical paths only
 Evals (LLM-as-judge, RAGAS)                       → all AI features
+Integration tests live in __tests__/*.integration.test.tsx
+Run separately: npm run test:integration
+These tests call real API — require both servers running
+Added whenever a frontend component consumes a backend API
 
 ### Rules — non-negotiable
 1. Tests written BEFORE implementation (TDD red→green→refactor)
