@@ -208,10 +208,10 @@ Before every commit, verify:
 - Supabase: live, all 5 tables seeded (17 itinerary days, 14 bookings)
 - FastAPI: running on port 8000, /health and /trips/{trip_id}/bookings working
 - Tests: 16 passing (pytest -v green)
-- Vercel: not yet configured
+- Vercel: live at https://trip-bw98xcb44-narsing-rao-kuras-projects.vercel.app
+  - Root directory in Vercel settings: empty (CLI deploys from apps/web)
 - Next task: test bookings endpoint with real trip UUID from Supabase,
   then wire Next.js frontend to API (replace hardcoded data with real API call)
-- Then: Vercel deploy + GitHub Actions CI
 
 ## Testing philosophy
 
