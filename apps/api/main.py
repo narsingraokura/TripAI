@@ -1,5 +1,5 @@
 import os
-from typing import Optional
+from typing import Literal, Optional
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
@@ -42,6 +42,33 @@ class Booking(BaseModel):
     discount_code: Optional[str]
     card_tip: str
     booked_at: Optional[str]
+
+
+class ItineraryDay(BaseModel):
+    id: str
+    trip_id: str
+    date: str
+    city: str
+    country: str
+    title: str
+    plan: str
+    intensity: Literal["light", "moderate", "busy", "travel", "special"]
+    is_special: bool
+    special_label: Optional[str]
+
+
+class ItineraryDayUpdate(BaseModel):
+    title: Optional[str] = None
+    plan: Optional[str] = None
+    intensity: Optional[Literal["light", "moderate", "busy", "travel", "special"]] = None
+
+
+class ItineraryResponse(BaseModel):
+    days: list[ItineraryDay]
+
+
+class BookingStatusUpdate(BaseModel):
+    status: str
 
 
 class BookingSummary(BaseModel):
@@ -100,3 +127,96 @@ def get_bookings(trip_id: str, supabase: Client = Depends(get_supabase)) -> Book
     )
 
     return BookingsResponse(bookings=bookings, summary=summary)
+
+
+@app.patch("/trips/{trip_id}/bookings/{booking_id}", response_model=Booking)
+def patch_booking(
+    trip_id: str,
+    booking_id: str,
+    update: BookingStatusUpdate,
+    supabase: Client = Depends(get_supabase),
+) -> Booking:
+    trip_result = supabase.table("trips").select("id").eq("id", trip_id).execute()
+    if not trip_result.data:
+        raise HTTPException(status_code=404, detail=f"Trip {trip_id} not found")
+
+    booking_result = (
+        supabase.table("bookings")
+        .select("*")
+        .eq("id", booking_id)
+        .eq("trip_id", trip_id)
+        .execute()
+    )
+    if not booking_result.data:
+        raise HTTPException(status_code=404, detail=f"Booking {booking_id} not found")
+
+    update_result = (
+        supabase.table("bookings")
+        .update({"status": update.status})
+        .eq("id", booking_id)
+        .eq("trip_id", trip_id)
+        .execute()
+    )
+    return Booking(**update_result.data[0])
+
+
+@app.get("/trips/{trip_id}/itinerary", response_model=ItineraryResponse)
+def get_itinerary(trip_id: str, supabase: Client = Depends(get_supabase)) -> ItineraryResponse:
+    trip_result = supabase.table("trips").select("id").eq("id", trip_id).execute()
+    if not trip_result.data:
+        raise HTTPException(status_code=404, detail=f"Trip {trip_id} not found")
+
+    result = supabase.table("itinerary_days").select("*").eq("trip_id", trip_id).execute()
+    days = sorted([ItineraryDay(**d) for d in result.data], key=lambda d: d.date)
+    return ItineraryResponse(days=days)
+
+
+@app.get("/trips/{trip_id}/itinerary/{date}", response_model=ItineraryDay)
+def get_itinerary_day(trip_id: str, date: str, supabase: Client = Depends(get_supabase)) -> ItineraryDay:
+    trip_result = supabase.table("trips").select("id").eq("id", trip_id).execute()
+    if not trip_result.data:
+        raise HTTPException(status_code=404, detail=f"Trip {trip_id} not found")
+
+    result = (
+        supabase.table("itinerary_days")
+        .select("*")
+        .eq("date", date)
+        .eq("trip_id", trip_id)
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail=f"No itinerary day found for {date}")
+
+    return ItineraryDay(**result.data[0])
+
+
+@app.patch("/trips/{trip_id}/itinerary/{date}", response_model=ItineraryDay)
+def patch_itinerary_day(
+    trip_id: str,
+    date: str,
+    update: ItineraryDayUpdate,
+    supabase: Client = Depends(get_supabase),
+) -> ItineraryDay:
+    trip_result = supabase.table("trips").select("id").eq("id", trip_id).execute()
+    if not trip_result.data:
+        raise HTTPException(status_code=404, detail=f"Trip {trip_id} not found")
+
+    existing = (
+        supabase.table("itinerary_days")
+        .select("*")
+        .eq("date", date)
+        .eq("trip_id", trip_id)
+        .execute()
+    )
+    if not existing.data:
+        raise HTTPException(status_code=404, detail=f"No itinerary day found for {date}")
+
+    fields = update.model_dump(exclude_none=True)
+    updated = (
+        supabase.table("itinerary_days")
+        .update(fields)
+        .eq("date", date)
+        .eq("trip_id", trip_id)
+        .execute()
+    )
+    return ItineraryDay(**updated.data[0])

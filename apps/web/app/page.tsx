@@ -1,40 +1,10 @@
-"use client"  // ← NEW. Tells Next.js this component uses browser APIs (useState)
+"use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Progress } from "@/components/ui/progress"
 import { Checkbox } from "@/components/ui/checkbox"
-
-type Urgency = "fire" | "now" | "soon"
-
-type Booking = {
-  id: string
-  title: string
-  subtitle: string
-  urgency: Urgency
-  estimatedCost: number
-  actualCost?: number
-  deadline: string
-  category: string
-  discountCode?: string
-  cardTip: string
-}
-
-const BOOKINGS: Booking[] = [
-  { id:"b1", title:"Flights: SFO → LHR + MXP → SFO", subtitle:"Jun 19 depart · Jul 5 return", urgency:"fire", estimatedCost:4800, deadline:"This week", category:"flights", cardTip:"Amex Gold (3X MR) + Venture X $300 credit on return" },
-  { id:"b2", title:"Eurostar: London → Paris", subtitle:"Tue Jun 23 · morning", urgency:"fire", estimatedCost:400, deadline:"This week", category:"trains", discountCode:"Standard Premier", cardTip:"Venture X (no FX fee)" },
-  { id:"b3", title:"Hotel Metropole Interlaken", subtitle:"Jun 27–Jul 1 · 5 nights", urgency:"fire", estimatedCost:1300, deadline:"This week", category:"hotels", cardTip:"Venture X (no FX fee on CHF)" },
-  { id:"b4", title:"Skydive Interlaken deposit", subtitle:"Parents only · Jul 1", urgency:"fire", estimatedCost:100, deadline:"This week", category:"activities", cardTip:"Full payment ~$840 on the day" },
-  { id:"b5", title:"Crowne Plaza London Kings Cross", subtitle:"Jun 20–22 · 3 nights", urgency:"now", estimatedCost:870, deadline:"This week", category:"hotels", discountCode:"100270748", cardTip:"Amex Gold via AmexTravel (2X MR)" },
-  { id:"b6", title:"Novotel Paris Les Halles", subtitle:"Jun 23–26 · 4 nights · anniversary Jun 26", urgency:"now", estimatedCost:1000, deadline:"This week", category:"hotels", discountCode:"SC196337864", cardTip:"Venture X or Amex Gold" },
-  { id:"b7", title:"Hyatt Centric Milan Centrale", subtitle:"Jul 2–4 · 3 nights", urgency:"now", estimatedCost:735, deadline:"This week", category:"hotels", discountCode:"151340", cardTip:"Amex Gold via AmexTravel (2X MR)" },
-  { id:"b8", title:"Train: Paris → Basel → Interlaken", subtitle:"Sat Jun 27 · birthday", urgency:"now", estimatedCost:280, deadline:"This week", category:"trains", cardTip:"Venture X (no FX fee)" },
-  { id:"b9", title:"Eiffel Tower tickets", subtitle:"Jun 24 · opens Apr 25", urgency:"soon", estimatedCost:150, deadline:"Apr 25", category:"activities", cardTip:"Venture X (no FX fee on EUR)" },
-  { id:"b10", title:"Louvre timed entry · Jun 25, 9am", subtitle:"Required in summer", urgency:"soon", estimatedCost:100, deadline:"Late April", category:"activities", cardTip:"Venture X" },
-  { id:"b11", title:"Anniversary dinner · Jun 26, Paris", subtitle:"Septime or Frenchie", urgency:"soon", estimatedCost:300, deadline:"May", category:"food", cardTip:"Amex Gold (no FX fee)" },
-  { id:"b12", title:"Train: Interlaken → Milan · Jul 2", subtitle:"Book 4–6 weeks out", urgency:"soon", estimatedCost:200, deadline:"May", category:"trains", cardTip:"Venture X (no FX fee)" },
-  { id:"b13", title:"Milan Duomo rooftop · Jul 3", subtitle:"Book in advance", urgency:"soon", estimatedCost:80, deadline:"May", category:"activities", cardTip:"Venture X (no FX fee on EUR)" },
-  { id:"b14", title:"Airalo eSIM · 4 devices", subtitle:"EU + UK data bundle", urgency:"soon", estimatedCost:90, deadline:"Jun 12", category:"misc", cardTip:"Any card — ~$90 total" },
-]
+import { fetchBookings, patchBookingStatus } from "@/lib/api"
+import type { Booking, BookingsResponse, BookingStatus, Urgency } from "@/lib/api"
 
 const BUDGET_CAP = 25000
 
@@ -44,23 +14,21 @@ const urgencyConfig: Record<Urgency, { label: string; className: string }> = {
   soon: { label: "Upcoming",  className: "bg-slate-100 text-slate-700 border-slate-200" },
 }
 
-// BookingRow now receives checked + onToggle from parent
 function BookingRow({
   booking,
-  checked,
   onToggle,
 }: {
   booking: Booking
-  checked: boolean
-  onToggle: (id: string) => void
+  onToggle: (id: string, currentStatus: BookingStatus) => void
 }) {
+  const checked = booking.status === "booked"
   const { label, className } = urgencyConfig[booking.urgency]
 
   return (
     <div className={`flex items-start gap-3 py-3 border-b border-slate-100 last:border-0 ${checked ? "opacity-60" : ""}`}>
       <Checkbox
         checked={checked}
-        onCheckedChange={() => onToggle(booking.id)}
+        onCheckedChange={() => onToggle(booking.id, booking.status)}
         className="mt-1 shrink-0"
       />
       <div className="flex-1 min-w-0">
@@ -68,12 +36,12 @@ function BookingRow({
           {booking.title}
         </p>
         <p className="text-xs text-slate-500 mt-0.5">{booking.subtitle}</p>
-        {booking.discountCode && (
+        {booking.discount_code && (
           <p className="text-xs font-mono bg-slate-50 border border-slate-200 rounded px-2 py-0.5 mt-1 inline-block">
-            {booking.discountCode}
+            {booking.discount_code}
           </p>
         )}
-        <p className="text-xs text-slate-400 mt-1">Card: {booking.cardTip}</p>
+        <p className="text-xs text-slate-400 mt-1">Card: {booking.card_tip}</p>
         {!checked && (
           <span className={`inline-block mt-1.5 text-xs font-medium px-2 py-0.5 rounded border ${className}`}>
             {label}
@@ -87,7 +55,7 @@ function BookingRow({
       </div>
       <div className="text-right shrink-0">
         <p className="text-sm font-semibold font-mono">
-          ${(booking.actualCost ?? booking.estimatedCost).toLocaleString()}
+          ${(booking.actual_cost ?? booking.estimated_cost).toLocaleString()}
         </p>
         <p className="text-xs text-slate-400 mt-0.5">{booking.deadline}</p>
       </div>
@@ -96,51 +64,116 @@ function BookingRow({
 }
 
 export default function Page() {
-  // checkedIds is a Set — like an array but optimized for has/add/delete
-  // Set makes it O(1) to check if a booking is checked
-  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set())
+  const [loadState, setLoadState] = useState<"loading" | "success" | "error">("loading")
+  const [data, setData] = useState<BookingsResponse | null>(null)
 
-  function handleToggle(id: string) {
-    setCheckedIds(prev => {
-      const next = new Set(prev)   // never mutate state directly — copy first
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
+  const load = useCallback(async () => {
+    setLoadState("loading")
+    try {
+      const result = await fetchBookings()
+      setData(result)
+      setLoadState("success")
+    } catch {
+      setLoadState("error")
+    }
+  }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  async function handleToggle(id: string, currentStatus: BookingStatus) {
+    if (!data) return
+    const newStatus: BookingStatus = currentStatus === "booked" ? "pending" : "booked"
+
+    // Optimistic update
+    setData(prev =>
+      prev
+        ? { ...prev, bookings: prev.bookings.map(b => b.id === id ? { ...b, status: newStatus } : b) }
+        : prev,
+    )
+
+    try {
+      await patchBookingStatus(id, newStatus)
+      const fresh = await fetchBookings()
+      setData(fresh)
+    } catch {
+      // Revert on failure
+      setData(prev =>
+        prev
+          ? { ...prev, bookings: prev.bookings.map(b => b.id === id ? { ...b, status: currentStatus } : b) }
+          : prev,
+      )
+    }
   }
 
-  const lockedIn = BOOKINGS
-    .filter(b => checkedIds.has(b.id))
-    .reduce((sum, b) => sum + (b.actualCost ?? b.estimatedCost), 0)
+  const header = (
+    <div className="bg-slate-900 text-white px-4 py-8 text-center">
+      <p className="text-xs tracking-widest text-slate-400 uppercase mb-1 font-mono">
+        Kura Family · 4 travelers
+      </p>
+      <h1 className="text-3xl font-light mb-1">Europe 2026</h1>
+      <p className="text-sm text-slate-400">
+        Jun 19 – Jul 5 &nbsp;·&nbsp; London · Paris · Interlaken · Milan
+      </p>
+    </div>
+  )
 
-  const remaining  = BUDGET_CAP - lockedIn
-  const progressPct = Math.round((lockedIn / BUDGET_CAP) * 100)
+  if (loadState === "loading") {
+    return (
+      <main className="min-h-screen bg-slate-50">
+        {header}
+        <div
+          className="max-w-2xl mx-auto px-4 py-12 text-center text-slate-400"
+          role="status"
+          aria-label="Loading bookings"
+        >
+          Loading bookings…
+        </div>
+      </main>
+    )
+  }
+
+  if (loadState === "error" || !data) {
+    return (
+      <main className="min-h-screen bg-slate-50">
+        {header}
+        <div className="max-w-2xl mx-auto px-4 py-12 text-center">
+          <p className="text-slate-600">
+            Could not load bookings. Check that the API is running.
+          </p>
+          <button
+            onClick={() => void load()}
+            className="mt-3 text-sm underline text-slate-500"
+          >
+            Retry
+          </button>
+        </div>
+      </main>
+    )
+  }
+
+  const { bookings, summary } = data
+  const progressPct = Math.round((summary.locked_in / BUDGET_CAP) * 100)
 
   const sections = [
-    { label: "Book immediately",   bookings: BOOKINGS.filter(b => b.urgency === "fire" && !checkedIds.has(b.id)) },
-    { label: "Book this week",     bookings: BOOKINGS.filter(b => b.urgency === "now"  && !checkedIds.has(b.id)) },
-    { label: "Upcoming deadlines", bookings: BOOKINGS.filter(b => b.urgency === "soon" && !checkedIds.has(b.id)) },
-    { label: "Done",               bookings: BOOKINGS.filter(b => checkedIds.has(b.id)) },
+    { label: "Book immediately",   bookings: bookings.filter(b => b.urgency === "fire" && b.status === "pending") },
+    { label: "Book this week",     bookings: bookings.filter(b => b.urgency === "now"  && b.status === "pending") },
+    { label: "Upcoming deadlines", bookings: bookings.filter(b => b.urgency === "soon" && b.status === "pending") },
+    { label: "Done",               bookings: bookings.filter(b => b.status === "booked") },
   ].filter(s => s.bookings.length > 0)
 
   return (
     <main className="min-h-screen bg-slate-50">
-      <div className="bg-slate-900 text-white px-4 py-8 text-center">
-        <p className="text-xs tracking-widest text-slate-400 uppercase mb-1 font-mono">
-          Kura Family · 4 travelers
-        </p>
-        <h1 className="text-3xl font-light mb-1">Europe 2026</h1>
-        <p className="text-sm text-slate-400">
-          Jun 19 – Jul 5 &nbsp;·&nbsp; London · Paris · Interlaken · Milan
-        </p>
-      </div>
+      {header}
 
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
 
         <div className="grid grid-cols-3 gap-3">
           {[
-            { label: "Bookings done", value: `${checkedIds.size}/${BOOKINGS.length}` },
-            { label: "Locked in",     value: `$${lockedIn.toLocaleString()}` },
-            { label: "Remaining",     value: `$${remaining.toLocaleString()}` },
+            { label: "Bookings done", value: `${summary.booked_count}/${summary.total_count}` },
+            { label: "Locked in",     value: `$${summary.locked_in.toLocaleString()}` },
+            { label: "Remaining",     value: `$${summary.remaining.toLocaleString()}` },
           ].map(stat => (
             <div key={stat.label} className="bg-white rounded-xl border border-slate-200 p-3 text-center">
               <p className="text-xl">{stat.value}</p>
@@ -170,7 +203,6 @@ export default function Page() {
               <BookingRow
                 key={booking.id}
                 booking={booking}
-                checked={checkedIds.has(booking.id)}
                 onToggle={handleToggle}
               />
             ))}

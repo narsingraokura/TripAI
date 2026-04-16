@@ -1,9 +1,10 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 from main import app, get_supabase
 
 TRIP_ID = "550e8400-e29b-41d4-a716-446655440000"
 NONEXISTENT_TRIP_ID = "00000000-0000-0000-0000-000000000000"
+BOOKING_ID = "uuid-1"  # fire/pending booking in MOCK_BOOKINGS_UNSORTED
 
 # Ordered wrong intentionally — implementation must sort them
 MOCK_BOOKINGS_UNSORTED = [
@@ -195,3 +196,94 @@ def test_nonexistent_trip_returns_detail_message():
     client = _client_with_mock(trip_found=False)
     body = client.get(f"/trips/{NONEXISTENT_TRIP_ID}/bookings").json()
     assert "detail" in body
+
+
+# ── PATCH /trips/{trip_id}/bookings/{booking_id} ──────────────────────────────
+
+def _make_patch_supabase_mock(
+    trip_found: bool = True,
+    booking_found: bool = True,
+    new_status: str = "booked",
+) -> MagicMock:
+    """Build a mock for the PATCH endpoint's three Supabase calls."""
+    mock = MagicMock()
+
+    trip_response = MagicMock()
+    trip_response.data = [{"id": TRIP_ID}] if trip_found else []
+
+    original_booking = MOCK_BOOKINGS_UNSORTED[1]  # uuid-1, fire, pending
+
+    select_response = MagicMock()
+    select_response.data = [original_booking] if booking_found else []
+
+    update_response = MagicMock()
+    update_response.data = [{**original_booking, "status": new_status}]
+
+    def table_side_effect(table_name: str):
+        chain = MagicMock()
+        if table_name == "trips":
+            chain.select.return_value.eq.return_value.execute.return_value = trip_response
+        else:
+            # select("*").eq(id).eq(trip_id).execute()
+            chain.select.return_value.eq.return_value.eq.return_value.execute.return_value = select_response
+            # update({status}).eq(id).eq(trip_id).execute()
+            chain.update.return_value.eq.return_value.eq.return_value.execute.return_value = update_response
+        return chain
+
+    mock.table.side_effect = table_side_effect
+    return mock
+
+
+def _patch_client(
+    trip_found: bool = True,
+    booking_found: bool = True,
+    new_status: str = "booked",
+) -> TestClient:
+    mock_supabase = _make_patch_supabase_mock(trip_found, booking_found, new_status)
+    app.dependency_overrides[get_supabase] = lambda: mock_supabase
+    return TestClient(app)
+
+
+def test_patch_booking_returns_200():
+    client = _patch_client()
+    response = client.patch(
+        f"/trips/{TRIP_ID}/bookings/{BOOKING_ID}",
+        json={"status": "booked"},
+    )
+    assert response.status_code == 200
+
+
+def test_patch_booking_returns_updated_status_booked():
+    client = _patch_client(new_status="booked")
+    body = client.patch(
+        f"/trips/{TRIP_ID}/bookings/{BOOKING_ID}",
+        json={"status": "booked"},
+    ).json()
+    assert body["status"] == "booked"
+
+
+def test_patch_booking_returns_updated_status_pending():
+    client = _patch_client(new_status="pending")
+    body = client.patch(
+        f"/trips/{TRIP_ID}/bookings/{BOOKING_ID}",
+        json={"status": "pending"},
+    ).json()
+    assert body["status"] == "pending"
+
+
+def test_patch_booking_nonexistent_trip_returns_404():
+    client = _patch_client(trip_found=False)
+    response = client.patch(
+        f"/trips/{NONEXISTENT_TRIP_ID}/bookings/{BOOKING_ID}",
+        json={"status": "booked"},
+    )
+    assert response.status_code == 404
+
+
+def test_patch_booking_nonexistent_booking_returns_404():
+    client = _patch_client(booking_found=False)
+    response = client.patch(
+        f"/trips/{TRIP_ID}/bookings/nonexistent-id",
+        json={"status": "booked"},
+    )
+    assert response.status_code == 404
