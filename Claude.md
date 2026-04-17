@@ -36,6 +36,15 @@ TripAI/
 ├── trip-data.md
 ├── architecture.md
 └── roadmap.md
+## Commands
+- Start frontend: `cd apps/web && npm run dev`
+- Start backend: `cd apps/api && uvicorn main:app --reload`
+- Run Qdrant: `docker run -p 6333:6333 -p 6334:6334 qdrant/qdrant`
+- Index trip data: `cd apps/api && python scripts/index_trip.py --trip-id $TRIP_ID`
+- Run backend tests: `cd apps/api && pytest -v`
+- Run frontend tests: `cd apps/web && npm test`
+- Run integration tests: `cd apps/web && npm run test:integration`
+
 ## What's built
 - [x] Next.js scaffold with TypeScript + Tailwind
 - [x] shadcn/ui components (button, badge, checkbox, progress, input, separator)
@@ -43,11 +52,18 @@ TripAI/
 - [x] Interactive checkboxes with state (useState, lifted to Page)
 - [x] Budget bar (updates as bookings are checked off)
 - [x] Light mode forced (ThemeProvider removed)
-- [ ] Supabase schema and seed data
-- [ ] FastAPI backend scaffold
+- [x] Supabase schema and seed data
+- [x] FastAPI backend scaffold
+- [x] Itinerary CRUD — GET, PATCH routes, 38 tests
+- [x] Itinerary editor UI — DayCard, DayEditor, CityGroup, 48 tests
+- [x] AI suggestions engine — POST /suggest, 3 alternatives with cost delta
+- [x] Integration test for itinerary API shape
+- [x] Navigation — Home, Itinerary, Budget, Chat tabs
+- [ ] RAG pipeline — Qdrant, embeddings, indexer (in progress)
+- [ ] Chat endpoint — SSE streaming (in progress)
+- [ ] Chat UI (in progress)
 - [ ] Clerk auth
 - [ ] Supabase Realtime sync
-- [ ] RAG pipeline for trip Q&A
 - [ ] Cost optimizer agent
 
 ## Database schema
@@ -140,6 +156,11 @@ EFFICIENT: Nimble · Iterable · Observable · Inexpensive
 TRUSTED: Correct · Resilient · Secure · Private · Compliant
 Reference: https://github.com/isolis/principles
 
+## Scripts and one-off commands
+Never give inline python -c or shell one-liners for anything beyond trivial.
+Always write the script to a file (e.g. scripts/get_trip_id.py) and give the
+command to run it from there. This avoids copy-paste indentation errors.
+
 ## Coding standards
 - TypeScript strict mode — no `any` types ever
 - Every component in its own file under components/
@@ -206,12 +227,15 @@ Before every commit, verify:
 
 ## Current session state
 - Supabase: live, all 5 tables seeded (17 itinerary days, 14 bookings)
-- FastAPI: running on port 8000, /health and /trips/{trip_id}/bookings working
-- Tests: 16 passing (pytest -v green)
+- FastAPI: running on port 8000, full itinerary + suggestions routes live
+- Tests: 55 passing (pytest -v green), frontend Jest green
 - Vercel: live at https://trip-bw98xcb44-narsing-rao-kuras-projects.vercel.app
   - Root directory in Vercel settings: empty (CLI deploys from apps/web)
-- Next task: test bookings endpoint with real trip UUID from Supabase,
-  then wire Next.js frontend to API (replace hardcoded data with real API call)
+- Phase 3 RAG pipeline in progress — three parallel agents running:
+  - Frontend: Chat UI
+  - Backend: Chat endpoint (SSE streaming)
+  - AI: RAG pipeline (Qdrant + embeddings + indexer)
+- Next after Phase 3: Clerk auth → Railway deploy → evals
 
 ## Testing philosophy
 
@@ -258,3 +282,77 @@ A feature is NOT done until:
 - For AI features: eval score > 0.7 on golden dataset
 - No TypeScript errors
 - No Python type errors (mypy clean)
+
+When touching any external API call, verify your usage against the version pinned here. If you upgrade a dependency, update this block in the same PR.
+
+## Runtime Dependencies (last verified 2026-04-16)
+
+Track versions of external libraries that have had breaking API changes in the past six months, plus current LLM model IDs. **When you touch any external API call, verify your usage against this block. When you upgrade a dependency, update this block in the same PR.**
+
+### Python (`apps/api`)
+- `qdrant-client` 1.17.1 — use `client.query_points(...)`, NOT `client.search(...)` (removed in 1.15)
+- `anthropic` ≥0.40 — model IDs use short aliases (`claude-sonnet-4-6`, `claude-haiku-4-5`). Import: `from anthropic import Anthropic`
+- `openai` ≥1.0 — client is `OpenAI()`, NOT `openai.ChatCompletion.create()`. Embeddings: `client.embeddings.create(...)`
+- `supabase` ≥2.0 — `create_client(url, key)`; `.execute()` returns `APIResponse` with `.data`
+
+### Node (`apps/web`)
+- `next` 16.x — App Router only. Server components are default; mark client components with `"use client"`.
+
+### LLM models (read from env, defaults in `apps/api/config.py`)
+- `ANTHROPIC_MODEL` default `claude-sonnet-4-6` — main chat + suggestions
+- `ANTHROPIC_CLASSIFIER_MODEL` default `claude-haiku-4-5` — guardrail classifier
+- `OPENAI_EMBEDDING_MODEL` default `text-embedding-3-small`
+
+### Deprecation watch
+Anthropic publishes a deprecation schedule at `docs.claude.com/en/docs/about-claude/model-deprecations`. Re-check quarterly. If a model is scheduled for retirement within six months, open a ticket to migrate.
+
+---
+
+## Numerical test principle
+
+When a test asserts a derived numerical value — budget totals, averages, durations, rates, percentages, anything computed from other values — assert **the formula**, not just the scalar output.
+
+**Why this matters:** a test that hardcodes the expected number will pass when the code is wrong, as long as the test data happens to produce that number by coincidence. This is how the P1 budget bug (round 1) shipped: `test_summary_remaining` asserted `remaining == 6020.00`, and the incorrect formula `total_estimated - locked_in` happened to produce `6020.00` for the seeded data. The test was green. The math was wrong.
+
+❌ Weak — passes when formula is wrong but data coincidentally matches:
+```python
+def test_summary_remaining():
+    summary = get_summary(trip_id)
+    assert summary["remaining"] == 24620.00
+```
+
+✅ Strong — asserts the relationship, not the coincidence:
+```python
+def test_summary_remaining_uses_budget_cap():
+    summary = get_summary(trip_id)
+    assert summary["remaining"] == pytest.approx(
+        BUDGET_CAP - summary["locked_in"]
+    )
+```
+
+Apply to any test where the expected value is **computed** from inputs. For each such test, ask: *"If someone changed the formula but the test data still happened to produce this number, would my test catch it?"* If no, rewrite the assertion in terms of the formula. Does not apply to tests asserting fixed constants (status codes, enum values, canned responses).
+
+---
+
+## Tester bug report format
+
+Every FAIL must include all six fields below. **`Error output` is mandatory** — if you couldn't capture it, say so explicitly (`attempted to capture, none produced`) so the debugger knows the absence is real, not forgotten.
+
+```
+## Bug: <one-line description>
+- **Severity:** P0 / P1 / P2 / P3
+- **Affects:** <feature, page, or endpoint>
+- **Observed:** <what actually happened in the UI / API response>
+- **Expected:** <what should have happened>
+- **Error output:** <console log / HTTP response body / full traceback / "attempted, none produced">
+- **Repro steps:**
+  1. ...
+  2. ...
+- **Environment:** <browser, OS, backend URL (local vs deployed)>
+```
+
+### Severity definitions
+- **P0** — feature is completely broken or app crashes
+- **P1** — feature works incorrectly in a way users will notice
+- **P2** — feature works but has gaps, leaks, or missing polish
+- **P3** — cosmetic or not-our-code (browser extension warnings, third-party noise)
