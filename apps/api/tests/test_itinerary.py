@@ -535,6 +535,19 @@ def test_malformed_json_from_claude_returns_502() -> None:
     assert response.status_code == 502
 
 
+def test_markdown_fenced_json_from_claude_returns_200() -> None:
+    mock_supabase = _make_suggest_supabase_mock()
+    mock_claude = MagicMock()
+    mock_content = MagicMock()
+    mock_content.text = f"```json\n{json.dumps(VALID_SUGGESTIONS)}\n```"
+    mock_claude.messages.create.return_value.content = [mock_content]
+    app.dependency_overrides[get_supabase] = lambda: mock_supabase
+    app.dependency_overrides[get_anthropic] = lambda: mock_claude
+    client = TestClient(app)
+    response = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest")
+    assert response.status_code == 200
+
+
 def test_wrong_suggestion_count_returns_502() -> None:
     two_suggestions = VALID_SUGGESTIONS[:2]
     mock_supabase = _make_suggest_supabase_mock()
@@ -547,3 +560,140 @@ def test_wrong_suggestion_count_returns_502() -> None:
     client = TestClient(app)
     response = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest")
     assert response.status_code == 502
+
+
+# ── POST /trips/{trip_id}/itinerary ───────────────────────────────────────────
+
+DATE_NEW = "2026-06-28"
+
+MOCK_NEW_DAY = {
+    "id": "new-day-uuid",
+    "trip_id": TRIP_ID,
+    "date": DATE_NEW,
+    "city": "Interlaken",
+    "country": "CH",
+    "title": "Rest Day",
+    "plan": "",
+    "intensity": "light",
+    "is_special": False,
+    "special_label": None,
+}
+
+NEW_DAY_BODY = {
+    "date": DATE_NEW,
+    "city": "Interlaken",
+    "country": "CH",
+    "title": "Rest Day",
+}
+
+
+def _make_create_day_mock(trip_found: bool = True, date_taken: bool = False) -> MagicMock:
+    mock = MagicMock()
+
+    trip_response = MagicMock()
+    trip_response.data = [{"id": TRIP_ID}] if trip_found else []
+
+    existing_response = MagicMock()
+    existing_response.data = [{"id": "existing-uuid"}] if date_taken else []
+
+    insert_response = MagicMock()
+    insert_response.data = [MOCK_NEW_DAY]
+
+    def table_side_effect(table_name: str) -> MagicMock:
+        chain = MagicMock()
+        if table_name == "trips":
+            chain.select.return_value.eq.return_value.execute.return_value = trip_response
+        else:
+            chain.select.return_value.eq.return_value.eq.return_value.execute.return_value = existing_response
+            chain.insert.return_value.execute.return_value = insert_response
+        return chain
+
+    mock.table.side_effect = table_side_effect
+    return mock
+
+
+def _create_client(trip_found: bool = True, date_taken: bool = False) -> TestClient:
+    app.dependency_overrides[get_supabase] = lambda: _make_create_day_mock(trip_found, date_taken)
+    return TestClient(app)
+
+
+def test_create_day_returns_201() -> None:
+    client = _create_client()
+    response = client.post(f"/trips/{TRIP_ID}/itinerary", json=NEW_DAY_BODY)
+    assert response.status_code == 201
+
+
+def test_create_day_returns_new_day_fields() -> None:
+    client = _create_client()
+    body = client.post(f"/trips/{TRIP_ID}/itinerary", json=NEW_DAY_BODY).json()
+    assert body["date"] == DATE_NEW
+    assert body["city"] == "Interlaken"
+    assert body["title"] == "Rest Day"
+
+
+def test_create_day_nonexistent_trip_returns_404() -> None:
+    client = _create_client(trip_found=False)
+    response = client.post(f"/trips/{NONEXISTENT_TRIP_ID}/itinerary", json=NEW_DAY_BODY)
+    assert response.status_code == 404
+
+
+def test_create_day_duplicate_date_returns_409() -> None:
+    client = _create_client(date_taken=True)
+    response = client.post(f"/trips/{TRIP_ID}/itinerary", json=NEW_DAY_BODY)
+    assert response.status_code == 409
+
+
+def test_create_day_missing_required_fields_returns_422() -> None:
+    client = _create_client()
+    response = client.post(f"/trips/{TRIP_ID}/itinerary", json={"date": DATE_NEW})
+    assert response.status_code == 422
+
+
+# ── DELETE /trips/{trip_id}/itinerary/{date} ──────────────────────────────────
+
+def _make_delete_day_mock(trip_found: bool = True, day_found: bool = True) -> MagicMock:
+    mock = MagicMock()
+
+    trip_response = MagicMock()
+    trip_response.data = [{"id": TRIP_ID}] if trip_found else []
+
+    existing_response = MagicMock()
+    existing_response.data = [{"id": "day-uuid"}] if day_found else []
+
+    delete_response = MagicMock()
+    delete_response.data = []
+
+    def table_side_effect(table_name: str) -> MagicMock:
+        chain = MagicMock()
+        if table_name == "trips":
+            chain.select.return_value.eq.return_value.execute.return_value = trip_response
+        else:
+            chain.select.return_value.eq.return_value.eq.return_value.execute.return_value = existing_response
+            chain.delete.return_value.eq.return_value.eq.return_value.execute.return_value = delete_response
+        return chain
+
+    mock.table.side_effect = table_side_effect
+    return mock
+
+
+def _delete_client(trip_found: bool = True, day_found: bool = True) -> TestClient:
+    app.dependency_overrides[get_supabase] = lambda: _make_delete_day_mock(trip_found, day_found)
+    return TestClient(app)
+
+
+def test_delete_day_returns_204() -> None:
+    client = _delete_client()
+    response = client.delete(f"/trips/{TRIP_ID}/itinerary/{DATE_JUN20}")
+    assert response.status_code == 204
+
+
+def test_delete_day_nonexistent_trip_returns_404() -> None:
+    client = _delete_client(trip_found=False)
+    response = client.delete(f"/trips/{NONEXISTENT_TRIP_ID}/itinerary/{DATE_JUN20}")
+    assert response.status_code == 404
+
+
+def test_delete_day_not_found_returns_404() -> None:
+    client = _delete_client(day_found=False)
+    response = client.delete(f"/trips/{TRIP_ID}/itinerary/{MISSING_DATE}")
+    assert response.status_code == 404

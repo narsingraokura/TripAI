@@ -133,3 +133,20 @@ create index if not exists bookings_trip_id_idx        on bookings(trip_id);
 create index if not exists bookings_urgency_idx        on bookings(trip_id, urgency);
 create index if not exists itinerary_days_trip_id_idx  on itinerary_days(trip_id);
 create index if not exists itinerary_days_date_idx     on itinerary_days(trip_id, date);
+
+-- ─────────────────────────────────────────────
+-- chat_logs (conversation logging for evals)
+-- ─────────────────────────────────────────────
+create table if not exists chat_logs (
+  id               uuid primary key default gen_random_uuid(),
+  trip_id          uuid not null references trips(id) on delete cascade,
+  conversation_id  uuid not null,
+  query            text not null,
+  retrieved_chunks jsonb,
+  response         text,
+  latency_ms       integer,
+  created_at       timestamptz not null default now()
+);
+
+create index if not exists chat_logs_trip_id_idx          on chat_logs(trip_id);
+create index if not exists chat_logs_conversation_id_idx  on chat_logs(conversation_id);
