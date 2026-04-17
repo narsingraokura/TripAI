@@ -1,4 +1,4 @@
-import type { ItineraryDay, Intensity } from "@/lib/api"
+import type { ItineraryDay, Intensity, Suggestion } from "@/lib/api"
 import DayCard from "./DayCard"
 
 type CityGroupProps = {
@@ -9,11 +9,18 @@ type CityGroupProps = {
   draft: { title: string; plan: string; intensity: Intensity } | null
   saving: boolean
   saveError: string | null
+  suggestingDate: string | null
+  suggestLoading: boolean
+  suggestions: Suggestion[] | null
+  suggestError: string | null
   onToggleExpand: (date: string) => void
   onStartEdit: (date: string) => void
   onDraftChange: (field: "title" | "plan" | "intensity", value: string) => void
   onSave: () => void
   onCancel: () => void
+  onSuggest: (date: string) => void
+  onSelectSuggestion: (s: Suggestion) => void
+  onDelete: (date: string) => void
 }
 
 export default function CityGroup({
@@ -24,11 +31,18 @@ export default function CityGroup({
   draft,
   saving,
   saveError,
+  suggestingDate,
+  suggestLoading,
+  suggestions,
+  suggestError,
   onToggleExpand,
   onStartEdit,
   onDraftChange,
   onSave,
   onCancel,
+  onSuggest,
+  onSelectSuggestion,
+  onDelete,
 }: CityGroupProps) {
   return (
     <section>
@@ -48,11 +62,17 @@ export default function CityGroup({
             draft={editingDate === day.date ? draft : null}
             saving={saving}
             saveError={editingDate === day.date ? saveError : null}
+            suggestLoading={suggestingDate === day.date && suggestLoading}
+            suggestions={suggestingDate === day.date ? suggestions : null}
+            suggestError={suggestingDate === day.date ? suggestError : null}
             onToggleExpand={() => onToggleExpand(day.date)}
             onStartEdit={() => onStartEdit(day.date)}
             onDraftChange={onDraftChange}
             onSave={onSave}
             onCancel={onCancel}
+            onSuggest={() => onSuggest(day.date)}
+            onSelectSuggestion={onSelectSuggestion}
+            onDelete={() => onDelete(day.date)}
           />
         ))}
       </div>

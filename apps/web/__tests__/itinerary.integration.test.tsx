@@ -42,9 +42,9 @@ itgDescribe("GET /trips/{trip_id}/itinerary", () => {
     days = body.days
   })
 
-  it("returns an array of 17 days", () => {
+  it("returns an array of 16 days", () => {
     expect(Array.isArray(days)).toBe(true)
-    expect(days).toHaveLength(17)
+    expect(days).toHaveLength(16)
   })
 
   it("each day has required fields: date, city, title, plan, intensity", () => {

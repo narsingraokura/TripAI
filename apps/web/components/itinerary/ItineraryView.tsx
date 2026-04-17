@@ -1,9 +1,16 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { fetchItinerary, patchItineraryDay } from "@/lib/api"
-import type { ItineraryDay, Intensity } from "@/lib/api"
+import {
+  createItineraryDay,
+  deleteItineraryDay,
+  fetchItinerary,
+  fetchSuggestions,
+  patchItineraryDay,
+} from "@/lib/api"
+import type { ItineraryDay, ItineraryDayCreate, Intensity, Suggestion } from "@/lib/api"
 import { Button } from "@/components/ui/button"
+import AddDayForm from "./AddDayForm"
 import CityGroup from "./CityGroup"
 
 type EditDraft = { title: string; plan: string; intensity: Intensity }
@@ -51,6 +58,11 @@ export default function ItineraryView() {
   const [editDraft, setEditDraft] = useState<EditDraft | null>(null)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [suggestingDate, setSuggestingDate] = useState<string | null>(null)
+  const [suggestions, setSuggestions] = useState<Suggestion[] | null>(null)
+  const [suggestLoading, setSuggestLoading] = useState(false)
+  const [suggestError, setSuggestError] = useState<string | null>(null)
+  const [showAddForm, setShowAddForm] = useState(false)
 
   const loadDays = useCallback(async () => {
     setLoading(true)
@@ -74,12 +86,66 @@ export default function ItineraryView() {
     setEditingDate(null)
     setEditDraft(null)
     setSaveError(null)
+    setSuggestingDate(null)
+    setSuggestions(null)
+    setSuggestError(null)
   }, [])
+
+  const handleSuggest = useCallback(async (date: string) => {
+    setExpandedDate(date)
+    setSuggestingDate(date)
+    setSuggestions(null)
+    setSuggestError(null)
+    setSuggestLoading(true)
+    try {
+      const data = await fetchSuggestions(date)
+      setSuggestions(data)
+    } catch (err) {
+      setSuggestError(err instanceof Error ? err.message : "Could not load suggestions. Try again.")
+    } finally {
+      setSuggestLoading(false)
+    }
+  }, [])
+
+  const handleDeleteDay = useCallback(
+    async (date: string) => {
+      const snapshot = days
+      setDays((prev) => prev.filter((d) => d.date !== date))
+      try {
+        await deleteItineraryDay(date)
+      } catch {
+        setDays(snapshot)
+      }
+    },
+    [days],
+  )
+
+  const handleAddDay = useCallback(async (values: ItineraryDayCreate) => {
+    const newDay = await createItineraryDay(values)
+    setDays((prev) =>
+      [...prev, newDay].sort((a, b) => a.date.localeCompare(b.date)),
+    )
+    setShowAddForm(false)
+  }, [])
+
+  const handleSelectSuggestion = useCallback(
+    (s: Suggestion) => {
+      if (!suggestingDate) return
+      setEditingDate(suggestingDate)
+      setEditDraft({ title: s.title, plan: s.description, intensity: s.intensity })
+      setSuggestingDate(null)
+      setSuggestions(null)
+      setSuggestError(null)
+      setSaveError(null)
+    },
+    [suggestingDate],
+  )
 
   const handleStartEdit = useCallback(
     (date: string) => {
       const day = days.find((d) => d.date === date)
       if (!day) return
+      setExpandedDate(date)
       setEditingDate(date)
       setEditDraft({ title: day.title, plan: day.plan, intensity: day.intensity })
       setSaveError(null)
@@ -151,6 +217,9 @@ export default function ItineraryView() {
     setEditingDate(null)
     setEditDraft(null)
     setSaveError(null)
+    setSuggestingDate(null)
+    setSuggestions(null)
+    setSuggestError(null)
   }, [])
 
   if (loading) return <LoadingSkeleton />
@@ -170,6 +239,15 @@ export default function ItineraryView() {
 
   return (
     <div className="space-y-8">
+      <div>
+        {showAddForm ? (
+          <AddDayForm onAdd={handleAddDay} onCancel={() => setShowAddForm(false)} />
+        ) : (
+          <Button variant="outline" size="sm" onClick={() => setShowAddForm(true)}>
+            + Add day
+          </Button>
+        )}
+      </div>
       {Array.from(cityGroups.entries()).map(([city, cityDays]) => (
         <CityGroup
           key={city}
@@ -180,11 +258,18 @@ export default function ItineraryView() {
           draft={editDraft}
           saving={saving}
           saveError={saveError}
+          suggestingDate={suggestingDate}
+          suggestLoading={suggestLoading}
+          suggestions={suggestions}
+          suggestError={suggestError}
           onToggleExpand={handleToggleExpand}
           onStartEdit={handleStartEdit}
           onDraftChange={handleDraftChange}
           onSave={handleSave}
           onCancel={handleCancel}
+          onSuggest={handleSuggest}
+          onSelectSuggestion={handleSelectSuggestion}
+          onDelete={handleDeleteDay}
         />
       ))}
     </div>

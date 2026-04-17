@@ -110,3 +110,111 @@ export async function patchItineraryDay(
   if (res.status === 204) return null
   return res.json() as Promise<ItineraryDay>
 }
+
+export type ItineraryDayCreate = {
+  date: string
+  city: string
+  country: string
+  title: string
+  plan?: string
+  intensity?: Intensity
+}
+
+export async function createItineraryDay(data: ItineraryDayCreate): Promise<ItineraryDay> {
+  const res = await fetch(`${getApiBase()}/trips/${getTripId()}/itinerary`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  return res.json() as Promise<ItineraryDay>
+}
+
+export async function deleteItineraryDay(date: string): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/trips/${getTripId()}/itinerary/${date}`,
+    { method: "DELETE" },
+  )
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+}
+
+export type ChatMessage = {
+  role: "user" | "assistant"
+  content: string
+}
+
+export type ChatSource = {
+  label: string
+  date: string
+}
+
+export type SSEChunk =
+  | { type: "token"; content: string }
+  | { type: "sources"; sources: ChatSource[] }
+  | { type: "error"; message: string }
+  | { type: "done" }
+
+export async function* streamChat(
+  message: string,
+  history: ChatMessage[],
+): AsyncGenerator<SSEChunk> {
+  const res = await fetch(`${getApiBase()}/trips/${getTripId()}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query: message }),
+  })
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  if (!res.body) throw new Error("No response body")
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ""
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split("\n")
+    buffer = lines.pop() ?? ""
+    for (const line of lines) {
+      if (line.startsWith("data: ")) {
+        const data = line.slice(6).trim()
+        if (!data || data === "[DONE]") continue
+        yield JSON.parse(data) as SSEChunk
+      }
+    }
+  }
+
+  if (buffer.startsWith("data: ")) {
+    const data = buffer.slice(6).trim()
+    if (data && data !== "[DONE]") yield JSON.parse(data) as SSEChunk
+  }
+}
+
+export type Suggestion = {
+  title: string
+  description: string
+  why_fits: string
+  cost_delta: number
+  intensity: "light" | "moderate" | "busy"
+  booking_required: boolean
+}
+
+type SuggestApiResponse = {
+  date: string
+  city: string
+  suggestions: Suggestion[]
+}
+
+export async function fetchSuggestions(date: string): Promise<Suggestion[]> {
+  const res = await fetch(
+    `${getApiBase()}/trips/${getTripId()}/itinerary/${date}/suggest`,
+    { method: "POST" },
+  )
+  if (!res.ok) {
+    const body = await res.json().catch(() => null) as { detail?: string } | null
+    throw new Error(body?.detail ?? `API error: ${res.status}`)
+  }
+  const data = (await res.json()) as SuggestApiResponse
+  return data.suggestions
+}

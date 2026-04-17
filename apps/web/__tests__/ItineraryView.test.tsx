@@ -1,4 +1,4 @@
-import { render, screen, waitFor, fireEvent } from "@testing-library/react"
+import { render, screen, waitFor, fireEvent, within } from "@testing-library/react"
 import ItineraryView from "@/components/itinerary/ItineraryView"
 import { fetchItinerary, patchItineraryDay } from "@/lib/api"
 import type { ItineraryDay } from "@/lib/api"
@@ -211,9 +211,8 @@ describe("Edit mode", () => {
 
   it("clicking Edit shows the editor form with current values", async () => {
     render(<ItineraryView />)
-    const toggle = await screen.findByRole("button", { name: /arrive lhr/i })
-    fireEvent.click(toggle)
-    fireEvent.click(screen.getByRole("button", { name: /edit/i }))
+    const headerBtn = await screen.findByRole("button", { name: /arrive lhr/i })
+    fireEvent.click(within(headerBtn.parentElement!).getByRole("button", { name: /edit/i }))
 
     expect(screen.getByDisplayValue("Arrive LHR")).toBeInTheDocument()
     expect(
@@ -223,9 +222,8 @@ describe("Edit mode", () => {
 
   it("Cancel hides the editor and makes no API call", async () => {
     render(<ItineraryView />)
-    const toggle = await screen.findByRole("button", { name: /arrive lhr/i })
-    fireEvent.click(toggle)
-    fireEvent.click(screen.getByRole("button", { name: /edit/i }))
+    const headerBtn = await screen.findByRole("button", { name: /arrive lhr/i })
+    fireEvent.click(within(headerBtn.parentElement!).getByRole("button", { name: /edit/i }))
     fireEvent.click(screen.getByRole("button", { name: /cancel/i }))
 
     expect(screen.queryByDisplayValue("Arrive LHR")).not.toBeInTheDocument()
@@ -234,9 +232,8 @@ describe("Edit mode", () => {
 
   it("Cancel after editing reverts input without touching state", async () => {
     render(<ItineraryView />)
-    const toggle = await screen.findByRole("button", { name: /arrive lhr/i })
-    fireEvent.click(toggle)
-    fireEvent.click(screen.getByRole("button", { name: /edit/i }))
+    const headerBtn = await screen.findByRole("button", { name: /arrive lhr/i })
+    fireEvent.click(within(headerBtn.parentElement!).getByRole("button", { name: /edit/i }))
 
     const titleInput = screen.getByDisplayValue("Arrive LHR")
     fireEvent.change(titleInput, { target: { value: "Changed title" } })
@@ -262,9 +259,8 @@ describe("Save", () => {
     })
 
     render(<ItineraryView />)
-    const toggle = await screen.findByRole("button", { name: /arrive lhr/i })
-    fireEvent.click(toggle)
-    fireEvent.click(screen.getByRole("button", { name: /edit/i }))
+    const headerBtn = await screen.findByRole("button", { name: /arrive lhr/i })
+    fireEvent.click(within(headerBtn.parentElement!).getByRole("button", { name: /edit/i }))
 
     const titleInput = screen.getByDisplayValue("Arrive LHR")
     fireEvent.change(titleInput, { target: { value: "Updated title" } })
@@ -286,9 +282,8 @@ describe("Save", () => {
     })
 
     render(<ItineraryView />)
-    const toggle = await screen.findByRole("button", { name: /arrive lhr/i })
-    fireEvent.click(toggle)
-    fireEvent.click(screen.getByRole("button", { name: /edit/i }))
+    const headerBtn = await screen.findByRole("button", { name: /arrive lhr/i })
+    fireEvent.click(within(headerBtn.parentElement!).getByRole("button", { name: /edit/i }))
 
     fireEvent.change(screen.getByDisplayValue("Arrive LHR"), {
       target: { value: "Updated title" },
@@ -304,9 +299,8 @@ describe("Save", () => {
     mockPatchItineraryDay.mockRejectedValue(new Error("API error: 500"))
 
     render(<ItineraryView />)
-    const toggle = await screen.findByRole("button", { name: /arrive lhr/i })
-    fireEvent.click(toggle)
-    fireEvent.click(screen.getByRole("button", { name: /edit/i }))
+    const headerBtn = await screen.findByRole("button", { name: /arrive lhr/i })
+    fireEvent.click(within(headerBtn.parentElement!).getByRole("button", { name: /edit/i }))
 
     fireEvent.change(screen.getByDisplayValue("Arrive LHR"), {
       target: { value: "Changed title" },
@@ -323,9 +317,8 @@ describe("Save", () => {
     mockPatchItineraryDay.mockRejectedValue(new Error("API error: 500"))
 
     render(<ItineraryView />)
-    const toggle = await screen.findByRole("button", { name: /arrive lhr/i })
-    fireEvent.click(toggle)
-    fireEvent.click(screen.getByRole("button", { name: /edit/i }))
+    const headerBtn = await screen.findByRole("button", { name: /arrive lhr/i })
+    fireEvent.click(within(headerBtn.parentElement!).getByRole("button", { name: /edit/i }))
 
     fireEvent.change(screen.getByDisplayValue("Arrive LHR"), {
       target: { value: "Changed title" },
