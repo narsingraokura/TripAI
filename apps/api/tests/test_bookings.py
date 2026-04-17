@@ -1,6 +1,7 @@
+import pytest
 from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
-from main import app, get_supabase
+from main import BUDGET_CAP, app, get_supabase
 
 TRIP_ID = "550e8400-e29b-41d4-a716-446655440000"
 NONEXISTENT_TRIP_ID = "00000000-0000-0000-0000-000000000000"
@@ -164,12 +165,31 @@ def test_summary_locked_in():
     assert summary["locked_in"] == 380.00
 
 
-def test_summary_remaining():
-    # total_estimated(6400) - locked_in(380) = 6020
+def test_summary_remaining_uses_budget_cap_formula():
+    """
+    Regression test for the P1 budget formula bug.
+
+    The original assertion was `remaining == 24620.00`, which passed
+    even when the formula was wrong (total_estimated - locked_in)
+    because the seeded data coincidentally produced a different scalar.
+    This version asserts the RELATIONSHIP, not the scalar — so it fails
+    under any wrong formula regardless of test data.
+
+    See CLAUDE.md → "Numerical test principle".
+    """
     client = _client_with_mock()
     summary = client.get(f"/trips/{TRIP_ID}/bookings").json()["summary"]
-    assert summary["remaining"] == 6020.00
 
+    # Assert the invariant: remaining is derived from BUDGET_CAP, not total_estimated.
+    assert summary["remaining"] == pytest.approx(BUDGET_CAP - summary["locked_in"])
+
+    # Negative check: remaining must NOT equal the wrong formula's output
+    # (unless by coincidence total_estimated == BUDGET_CAP, which it doesn't here).
+    wrong_formula = summary["total_estimated"] - summary["locked_in"]
+    assert summary["remaining"] != pytest.approx(wrong_formula), (
+        f"remaining ({summary['remaining']}) matches the WRONG formula "
+        f"total_estimated - locked_in. Should be BUDGET_CAP - locked_in."
+    )
 
 def test_summary_booked_count():
     # Only uuid-2 has status=booked

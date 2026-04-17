@@ -1,26 +1,36 @@
 import json
 import os
+import re
 from typing import Literal, Optional
 
 import anthropic
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from supabase import Client, create_client
+
+from rag.indexer import index_trip
+from routes.chat import router as chat_router
 
 load_dotenv()
 
 app = FastAPI(title="TripAI API", version="0.1.0")
 
+# Read comma-separated list of allowed frontend URLs from environment.
+# Locally: just localhost. In production: Vercel URL (+ localhost so you can
+# point your laptop frontend at the Railway backend for debugging if ever needed).
+cors_origins_raw = os.getenv("CORS_ORIGINS", "http://localhost:3000")
+cors_origins = [o.strip() for o in cors_origins_raw.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 # ── Dependencies ─────────────────────────────────────────────────────────────
 
 def get_supabase() -> Client:
@@ -61,6 +71,17 @@ class ItineraryDay(BaseModel):
     intensity: Literal["light", "moderate", "busy", "travel", "special"]
     is_special: bool
     special_label: Optional[str]
+
+
+class ItineraryDayCreate(BaseModel):
+    date: str
+    city: str
+    country: str
+    title: str
+    plan: str = ""
+    intensity: Literal["light", "moderate", "busy", "travel", "special"] = "light"
+    is_special: bool = False
+    special_label: Optional[str] = None
 
 
 class ItineraryDayUpdate(BaseModel):
@@ -162,7 +183,7 @@ def get_bookings(trip_id: str, supabase: Client = Depends(get_supabase)) -> Book
         for b in bookings
         if b.status == "booked"
     )
-    remaining = total_estimated - locked_in
+    remaining = BUDGET_CAP - locked_in
 
     summary = BookingSummary(
         total_estimated=round(total_estimated, 2),
@@ -310,15 +331,23 @@ def suggest_itinerary_alternatives(
         "Suggest 3 alternative activities for this day."
     )
 
-    response = claude.messages.create(
-        model="claude-3-5-sonnet-20241022",
-        max_tokens=1500,
-        temperature=0.7,
-        system=SUGGEST_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_message}],
-    )
+    try:
+        response = claude.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1500,
+            temperature=0.7,
+            system=SUGGEST_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_message}],
+        )
+    except anthropic.BadRequestError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except anthropic.APIStatusError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    raw_text = response.content[0].text
+    raw_text = response.content[0].text.strip()
+    if raw_text.startswith("```"):
+        raw_text = re.sub(r"^```(?:json)?\s*\n?", "", raw_text)
+        raw_text = re.sub(r"\n?```\s*$", "", raw_text).strip()
 
     try:
         suggestions_data = json.loads(raw_text)
@@ -338,3 +367,77 @@ def suggest_itinerary_alternatives(
         raise HTTPException(status_code=502, detail=f"AI response failed validation: {exc}") from exc
 
     return SuggestResponse(date=date, city=day["city"], suggestions=suggestions)
+
+
+@app.post("/trips/{trip_id}/itinerary", response_model=ItineraryDay, status_code=201)
+def create_itinerary_day(
+    trip_id: str,
+    body: ItineraryDayCreate,
+    supabase: Client = Depends(get_supabase),
+) -> ItineraryDay:
+    trip_result = supabase.table("trips").select("id").eq("id", trip_id).execute()
+    if not trip_result.data:
+        raise HTTPException(status_code=404, detail=f"Trip {trip_id} not found")
+
+    existing = (
+        supabase.table("itinerary_days")
+        .select("id")
+        .eq("date", body.date)
+        .eq("trip_id", trip_id)
+        .execute()
+    )
+    if existing.data:
+        raise HTTPException(status_code=409, detail=f"Itinerary day for {body.date} already exists")
+
+    row = {
+        "trip_id": trip_id,
+        "date": body.date,
+        "city": body.city,
+        "country": body.country,
+        "title": body.title,
+        "plan": body.plan,
+        "intensity": body.intensity,
+        "is_special": body.is_special,
+        "special_label": body.special_label,
+    }
+    result = supabase.table("itinerary_days").insert(row).execute()
+    return ItineraryDay(**result.data[0])
+
+
+@app.delete("/trips/{trip_id}/itinerary/{date}")
+def delete_itinerary_day(
+    trip_id: str,
+    date: str,
+    supabase: Client = Depends(get_supabase),
+) -> Response:
+    trip_result = supabase.table("trips").select("id").eq("id", trip_id).execute()
+    if not trip_result.data:
+        raise HTTPException(status_code=404, detail=f"Trip {trip_id} not found")
+
+    existing = (
+        supabase.table("itinerary_days")
+        .select("id")
+        .eq("date", date)
+        .eq("trip_id", trip_id)
+        .execute()
+    )
+    if not existing.data:
+        raise HTTPException(status_code=404, detail=f"No itinerary day found for {date}")
+
+    supabase.table("itinerary_days").delete().eq("date", date).eq("trip_id", trip_id).execute()
+    return Response(status_code=204)
+
+
+@app.post("/trips/{trip_id}/chat/index")
+def chat_index(
+    trip_id: str,
+    supabase: Client = Depends(get_supabase),
+) -> dict[str, int]:
+    trip_result = supabase.table("trips").select("id").eq("id", trip_id).execute()
+    if not trip_result.data:
+        raise HTTPException(status_code=404, detail=f"Trip {trip_id} not found")
+    count = index_trip(trip_id)
+    return {"indexed": count}
+
+
+app.include_router(chat_router)
