@@ -13,6 +13,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from supabase import Client, create_client
 
+from rag.guardrail import classify_query
 from rag.retriever import retrieve
 
 load_dotenv()
@@ -41,6 +42,12 @@ Never invent dates, costs, hotels, or bookings.
 --- END CONTEXT ---"""
 
 
+REFUSAL_MSG = (
+    "I can only help with questions about your Europe 2026 trip. "
+    "Feel free to ask about your destinations, bookings, dates, or travel logistics!"
+)
+
+
 class ChatRequest(BaseModel):
     query: str
     conversation_id: Optional[str] = None
@@ -57,6 +64,8 @@ def get_async_anthropic() -> anthropic.AsyncAnthropic:
 
 
 def _validate_query(query: str) -> None:
+    if not query.strip():
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
     if len(query) > 500:
         raise HTTPException(status_code=400, detail="Query too long (max 500 characters)")
     for pattern in INJECTION_PATTERNS:
@@ -70,6 +79,33 @@ def _assemble_context(chunks: list[dict[str, object]]) -> str:
     return "\n".join(f"[{i + 1}] {chunk['text']}" for i, chunk in enumerate(chunks))
 
 
+async def _refusal_event_gen(
+    conversation_id: str,
+    trip_id: str,
+    query: str,
+    supabase: Client,
+) -> AsyncGenerator[str, None]:
+    start = time.monotonic()
+    yield f"data: {json.dumps({'type': 'token', 'content': REFUSAL_MSG})}\n\n"
+    ms = int((time.monotonic() - start) * 1000)
+    yield f"data: {json.dumps({'type': 'done', 'conversation_id': conversation_id, 'latency_ms': ms})}\n\n"
+    yield "data: [DONE]\n\n"
+    try:
+        supabase.table("chat_logs").insert(
+            {
+                "trip_id": trip_id,
+                "conversation_id": conversation_id,
+                "query": query,
+                "retrieved_chunks": [],
+                "response": REFUSAL_MSG,
+                "latency_ms": ms,
+                "guardrail_classification": "off_topic",
+            }
+        ).execute()
+    except Exception:
+        pass
+
+
 @router.post("/trips/{trip_id}/chat")
 async def chat(
     trip_id: str,
@@ -79,11 +115,20 @@ async def chat(
 ) -> StreamingResponse:
     _validate_query(body.query)
 
+    conversation_id = body.conversation_id or str(uuid.uuid4())
+    classification = await classify_query(body.query)
+
     trip_result = supabase.table("trips").select("id").eq("id", trip_id).execute()
     if not trip_result.data:
         raise HTTPException(status_code=404, detail=f"Trip {trip_id} not found")
 
-    conversation_id = body.conversation_id or str(uuid.uuid4())
+    if classification == "off_topic":
+        return StreamingResponse(
+            _refusal_event_gen(conversation_id, trip_id, body.query, supabase),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
     chunks: list[dict[str, object]] = await asyncio.to_thread(retrieve, body.query, trip_id, 3)
     context = _assemble_context(chunks)
     system = CHAT_SYSTEM_PROMPT.format(context=context)
@@ -130,6 +175,7 @@ async def chat(
                         "retrieved_chunks": chunks,
                         "response": "".join(full_response),
                         "latency_ms": ms,
+                        "guardrail_classification": classification,
                     }
                 ).execute()
             except Exception:

@@ -1,0 +1,98 @@
+[
+  {
+    "id": "factual_01",
+    "category": "factual",
+    "question": "What hotel are we staying at in London?",
+    "expected_answer": "Crowne Plaza London Kings Cross",
+    "eval_criteria": {
+      "faithfulness": true,
+      "relevance": true,
+      "guardrail": "answer"
+    },
+    "grounding_source": "supabase:bookings"
+  },
+  {
+    "id": "factual_02",
+    "category": "factual",
+    "question": "What hotel are we staying at in Interlaken?",
+    "expected_answer": "Hotel Metropole Interlaken",
+    "eval_criteria": {
+      "faithfulness": true,
+      "relevance": true,
+      "guardrail": "answer"
+    },
+    "grounding_source": "supabase:bookings"
+  },
+  {
+    "id": "factual_03",
+    "category": "factual",
+    "question": "What date do we arrive in Paris?",
+    "expected_answer": "June 23, 2026",
+    "eval_criteria": {
+      "faithfulness": true,
+      "relevance": true,
+      "guardrail": "answer"
+    },
+    "grounding_source": "supabase:itinerary_days"
+  },
+  {
+    "id": "factual_04",
+    "category": "factual",
+    "question": "What date do we travel from Interlaken to Milan?",
+    "expected_answer": "July 2, 2026",
+    "eval_criteria": {
+      "faithfulness": true,
+      "relevance": true,
+      "guardrail": "answer"
+    },
+    "grounding_source": "supabase:itinerary_days"
+  },
+  {
+    "id": "factual_05",
+    "category": "factual",
+    "question": "How many people are traveling and what passports do they hold?",
+    "expected_answer": "4 travelers — 2 adults with Indian passports and 2 kids with US passports",
+    "eval_criteria": {
+      "faithfulness": true,
+      "relevance": true,
+      "guardrail": "answer"
+    },
+    "grounding_source": "supabase:bookings"
+  },
+  {
+    "id": "factual_06",
+    "category": "factual",
+    "question": "What is the total budget cap for the trip?",
+    "expected_answer": "$25,000",
+    "eval_criteria": {
+      "faithfulness": true,
+      "relevance": true,
+      "guardrail": "answer"
+    },
+    "grounding_source": "supabase:trips"
+  },
+  {
+    "id": "factual_07",
+    "category": "factual",
+    "question": "How do we travel from London to Paris?",
+    "expected_answer": "Eurostar from London to Paris on June 23, Standard Premier class, estimated cost $400",
+    "eval_criteria": {
+      "faithfulness": true,
+      "relevance": true,
+      "guardrail": "answer"
+    },
+    "grounding_source": "supabase:bookings"
+  },
+  {
+    "id": "factual_08",
+    "category": "factual",
+    "question": "What is planned for June 29?",
+    "expected_answer": "Titlis mountain day in Engelberg — train to Engelberg, Rotair cable car to Mt. Titlis (3020m), glacier walk, cliff walk, and snow play for kids",
+    "eval_criteria": {
+      "faithfulness": true,
+      "relevance": true,
+      "guardrail": "answer"
+    },
+    "grounding_source": "supabase:itinerary_days"
+  }
+]

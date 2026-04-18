@@ -1,0 +1,62 @@
+[
+  {
+    "id": "reasoning_01",
+    "category": "reasoning",
+    "question": "If we extend our Paris stay by one night—departing for Interlaken on Jun 28 instead of Jun 27—which Interlaken activity would become a travel day and be lost, and which hotel booking would now have an unused paid night?",
+    "expected_answer": "Extending Paris by a night pushes the Paris→Basel→Interlaken train from Jun 27 to Jun 28. Hotel Metropole is already booked Jun 27–Jul 1 (5 nights), so the Jun 27 night would be paid but unused. Because we now arrive mid-afternoon on Jun 28, the full Lake Brienz boat cruise and Giessbach Falls hike planned for Jun 28 would be lost—replaced by the travel day. The Titlis mountain day on Jun 29 and the Skydive Interlaken deposit already paid for Jul 1 remain intact since those fall later in the stay.",
+    "eval_criteria": {
+      "faithfulness": true,
+      "relevance": true,
+      "guardrail": "answer"
+    },
+    "grounding_source": "supabase:itinerary_days(2026-06-27,2026-06-28),bookings(Hotel Metropole Jun 27–Jul 1,Train Paris→Basel→Interlaken Jun 27)"
+  },
+  {
+    "id": "reasoning_02",
+    "category": "reasoning",
+    "question": "We're considering adding a family gondola excursion in Grindelwald on Jun 30 at $75 per person for all 4 travelers. What would the new total estimated spend be across all 14 bookings, and how much buffer remains against the $25,000 budget cap?",
+    "expected_answer": "The 14 booked items total $10,405 in estimated costs (flights $4,800 + Eurostar $400 + Hotel Metropole $1,300 + Skydive deposit $100 + Crowne Plaza $870 + Novotel Paris $1,000 + Hyatt Milan $735 + Paris→Interlaken train $280 + Eiffel Tower $150 + Louvre $100 + Anniversary dinner $300 + Interlaken→Milan train $200 + Duomo rooftop $80 + Airalo eSIM $90). Adding 4 × $75 = $300 for the gondola brings the total to $10,705. With a $25,000 budget cap, the remaining buffer would be $14,295—well under the cap.",
+    "eval_criteria": {
+      "faithfulness": true,
+      "relevance": true,
+      "guardrail": "answer"
+    },
+    "grounding_source": "supabase:bookings(all 14 estimated_cost fields),trips(budget_cap=25000)"
+  },
+  {
+    "id": "reasoning_03",
+    "category": "reasoning",
+    "question": "On Jun 27 we're traveling from Paris to Interlaken. Given the route described in the itinerary and the train booked for that day, what does the birthday evening celebration include and which hotel do we check into?",
+    "expected_answer": "The Jun 27 itinerary describes a morning TGV from Paris Gare de Lyon to Basel, followed by a regional train to Interlaken Ost, arriving mid-afternoon. The evening birthday celebration—the day is marked as a special day with the label 'Birthday'—includes checking into Hotel Metropole (booked Jun 27–Jul 1 for 5 nights), a birthday cake, and an evening walk along Höheweg with panoramic views of the Eiger, Mönch, and Jungfrau. The train booking (Paris→Basel→Interlaken, $280) and the hotel booking (Hotel Metropole, $1,300) together confirm the logistics and the accommodation for that night.",
+    "eval_criteria": {
+      "faithfulness": true,
+      "relevance": true,
+      "guardrail": "answer"
+    },
+    "grounding_source": "supabase:itinerary_days(2026-06-27,is_special=true,special_label=Birthday),bookings(Train Paris→Basel→Interlaken Jun 27,Hotel Metropole Jun 27–Jul 1)"
+  },
+  {
+    "id": "reasoning_04",
+    "category": "reasoning",
+    "question": "Our anniversary falls during the Paris leg of the trip. What is planned for that morning, and what reservation action must be taken—and by when—to secure the evening anniversary dinner?",
+    "expected_answer": "Jun 26 is our anniversary, marked as a special day in the itinerary. The morning plan is Montmartre: Sacré-Cœur, the artist square, and panoramic views over Paris, followed by lunch at a brasserie in the 18th arrondissement. To secure the evening dinner, the booking record for 'Anniversary dinner Jun 26 Paris' (estimated $300) shows the deadline is May—meaning a reservation must be made by May. The itinerary plan itself notes that a reservation is required and calls it 'one of the best meals of the trip.'",
+    "eval_criteria": {
+      "faithfulness": true,
+      "relevance": true,
+      "guardrail": "answer"
+    },
+    "grounding_source": "supabase:itinerary_days(2026-06-26,is_special=true,special_label=Anniversary),bookings(Anniversary dinner Jun 26 Paris,deadline=May,estimated_cost=300)"
+  },
+  {
+    "id": "reasoning_05",
+    "category": "reasoning",
+    "question": "We have a Louvre timed entry booked for 9am. Looking at the full itinerary for that same date, what museum do we visit in the afternoon, and which credit card is recommended for paying the Louvre ticket?",
+    "expected_answer": "The Louvre timed entry is booked for Jun 25 at 9am. The Jun 25 itinerary plan shows the Louvre visit covers the Mona Lisa, Venus de Milo, and the Egyptian wing (2–3 hours), followed by lunch near Palais Royal. The afternoon is spent at the Musée d'Orsay, focused on Impressionist masterpieces, with an evening stroll along the Seine and a light dinner. The booking record for the Louvre timed entry lists the Venture X card as the recommended payment method (no foreign exchange fee).",
+    "eval_criteria": {
+      "faithfulness": true,
+      "relevance": true,
+      "guardrail": "answer"
+    },
+    "grounding_source": "supabase:itinerary_days(2026-06-25,plan includes Musée d'Orsay afternoon),bookings(Louvre timed entry Jun 25 9am,card_tip=Venture X)"
+  }
+]
