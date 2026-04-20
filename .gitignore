@@ -6,3 +6,4 @@ apps/web/node_modules/
 apps/web/.next/
 apps/web/.env.local
 .DS_Store
+apps/api/.deepeval/
