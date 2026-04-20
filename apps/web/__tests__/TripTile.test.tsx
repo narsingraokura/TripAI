@@ -55,10 +55,21 @@ describe("TripTile — demo variant", () => {
   })
 
   it("renders live stats from API", async () => {
+    const { booked_count, total_count, locked_in } = MOCK_RESPONSE.summary
+    const expectedUsd = new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 0,
+    }).format(locked_in)
+
     render(<TripTile {...DEMO_PROPS} />)
     await waitFor(() => {
-      expect(screen.getByText(/4 \/ 14/)).toBeInTheDocument()
-      expect(screen.getByText(/\$4,800/)).toBeInTheDocument()
+      expect(
+        screen.getByText(new RegExp(`${booked_count} \\/ ${total_count}`))
+      ).toBeInTheDocument()
+      expect(
+        screen.getByText(new RegExp(expectedUsd.replace("$", "\\$")))
+      ).toBeInTheDocument()
     })
   })
 
