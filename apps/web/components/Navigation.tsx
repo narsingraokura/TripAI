@@ -49,14 +49,14 @@ function MessageIcon() {
 }
 
 const tabs: Tab[] = [
-  { label: "Home",      href: "/",           Icon: HomeIcon },
+  { label: "Home",      href: "/trip",        Icon: HomeIcon },
   { label: "Itinerary", href: "/itinerary",  Icon: CalendarIcon },
   { label: "Budget",    href: null,           Icon: WalletIcon },
   { label: "Chat",      href: "/chat",        Icon: MessageIcon },
 ]
 
 function matchesPath(href: string, pathname: string) {
-  return href === "/" ? pathname === "/" : pathname.startsWith(href)
+  return pathname.startsWith(href)
 }
 
 export default function Navigation() {

@@ -1,5 +1,5 @@
 import { render, screen, waitFor, fireEvent } from "@testing-library/react"
-import Page from "@/app/page"
+import Page from "@/app/trip/page"
 import { fetchBookings, patchBookingStatus } from "@/lib/api"
 import type { BookingsResponse } from "@/lib/api"
 
