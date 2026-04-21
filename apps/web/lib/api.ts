@@ -42,6 +42,12 @@ function getTripId(): string {
   return id
 }
 
+function getAdminApiKey(): string {
+  const key = process.env.NEXT_PUBLIC_ADMIN_API_KEY
+  if (!key) throw new Error("NEXT_PUBLIC_ADMIN_API_KEY is not set")
+  return key
+}
+
 export async function fetchBookings(): Promise<BookingsResponse> {
   const res = await fetch(`${getApiBase()}/trips/${getTripId()}/bookings`)
   if (!res.ok) throw new Error(`API error: ${res.status}`)
@@ -56,7 +62,7 @@ export async function patchBookingStatus(
     `${getApiBase()}/trips/${getTripId()}/bookings/${bookingId}`,
     {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-API-Key": getAdminApiKey() },
       body: JSON.stringify({ status }),
     },
   )
@@ -102,7 +108,7 @@ export async function patchItineraryDay(
     `${getApiBase()}/trips/${getTripId()}/itinerary/${date}`,
     {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-API-Key": getAdminApiKey() },
       body: JSON.stringify(patch),
     },
   )
@@ -123,7 +129,7 @@ export type ItineraryDayCreate = {
 export async function createItineraryDay(data: ItineraryDayCreate): Promise<ItineraryDay> {
   const res = await fetch(`${getApiBase()}/trips/${getTripId()}/itinerary`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-API-Key": getAdminApiKey() },
     body: JSON.stringify(data),
   })
   if (!res.ok) throw new Error(`API error: ${res.status}`)
@@ -133,7 +139,7 @@ export async function createItineraryDay(data: ItineraryDayCreate): Promise<Itin
 export async function deleteItineraryDay(date: string): Promise<void> {
   const res = await fetch(
     `${getApiBase()}/trips/${getTripId()}/itinerary/${date}`,
-    { method: "DELETE" },
+    { method: "DELETE", headers: { "X-API-Key": getAdminApiKey() } },
   )
   if (!res.ok) throw new Error(`API error: ${res.status}`)
 }
@@ -209,7 +215,7 @@ type SuggestApiResponse = {
 export async function fetchSuggestions(date: string): Promise<Suggestion[]> {
   const res = await fetch(
     `${getApiBase()}/trips/${getTripId()}/itinerary/${date}/suggest`,
-    { method: "POST" },
+    { method: "POST", headers: { "X-API-Key": getAdminApiKey() } },
   )
   if (!res.ok) {
     const body = await res.json().catch(() => null) as { detail?: string } | null
