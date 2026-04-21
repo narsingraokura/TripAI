@@ -205,6 +205,10 @@ Only after plan is approved:
 GOAL: [deliverable]
 CONTEXT: [relevant files]
 DONE WHEN: [verifiable outcomes]
+  — If the ticket adds a security boundary (auth header, guard, permission),
+    "Done when" must include BOTH: backend rejects without the credential AND
+    frontend/caller sends the credential. If those layers are in separate tickets,
+    the second ticket owns the end-to-end integration test.
 DO NOT: [guardrails]
 
 ## Deployment
@@ -225,6 +229,7 @@ Before every commit, verify:
 5. No business logic added to `page.tsx`
 6. No direct Supabase calls from frontend code
 7. No UI stub committed with placeholder tests — ship the real implementation or leave untracked
+8. FastAPI `Header(None)`, `Query(None)`, `Body(None)` params typed `str | None`, not `str` — mypy catches this but code review should too
 
 ## Current session state
 - Supabase: live, all 5 tables seeded (17 itinerary days, 14 bookings)
@@ -259,6 +264,14 @@ Added whenever a frontend component consumes a backend API
 6. Test file lives next to the code it tests:
    apps/api/tests/test_bookings.py  ← tests for routes/bookings.py
    apps/web/__tests__/BookingRow.test.tsx ← tests for BookingRow.tsx
+7. When a backend security guard is added (auth header, rate limit, permission check),
+   write a frontend regression test asserting the corresponding `fetch` call sends the
+   required header. Both layers must be verified in the same "Done when" — not split
+   across tickets.
+8. When a test asserts a non-2xx status code and the route body calls external services
+   (Supabase, Claude), add a working mock for those services. If you don't, the test may
+   pass because of a downstream failure (500) rather than the guard you're testing (403).
+   The guard must be the discriminating factor.
 
 ### Test stack
 Backend:
