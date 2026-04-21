@@ -1,3 +1,4 @@
+import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -6,8 +7,6 @@ from fastapi.testclient import TestClient
 from main import app, get_supabase
 from routes.chat import get_async_anthropic
 from routes.chat import get_supabase as chat_get_supabase
-
-TEST_KEY = "test-key-12345"
 TRIP_ID = "550e8400-e29b-41d4-a716-446655440000"
 BOOKING_ID = "uuid-booking-auth-test"
 DATE = "2026-06-20"
@@ -192,7 +191,7 @@ def test_patch_booking_with_correct_key_is_not_403() -> None:
     resp = client.patch(
         f"/trips/{TRIP_ID}/bookings/{BOOKING_ID}",
         json={"status": "booked"},
-        headers={"X-API-Key": TEST_KEY},
+        headers={"X-API-Key": os.environ["ADMIN_API_KEY"]},
     )
     assert resp.status_code != 403
 
