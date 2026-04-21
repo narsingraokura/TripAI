@@ -224,6 +224,7 @@ Before every commit, verify:
 4. Every new DB query filters by `trip_id`
 5. No business logic added to `page.tsx`
 6. No direct Supabase calls from frontend code
+7. No UI stub committed with placeholder tests — ship the real implementation or leave untracked
 
 ## Current session state
 - Supabase: live, all 5 tables seeded (17 itinerary days, 14 bookings)
@@ -331,6 +332,40 @@ def test_summary_remaining_uses_budget_cap():
 ```
 
 Apply to any test where the expected value is **computed** from inputs. For each such test, ask: *"If someone changed the formula but the test data still happened to produce this number, would my test catch it?"* If no, rewrite the assertion in terms of the formula. Does not apply to tests asserting fixed constants (status codes, enum values, canned responses).
+
+---
+
+## Error-state test principle
+
+For error and edge-case tests, assert the **absence** of artifacts — not their presence.
+
+**Why this matters:** asserting that an error message *is* shown validates what the buggy code does. Asserting it is *not* shown catches the regression. The same trap applies to loading states: a test that asserts `"Loading..." is present` after a failed fetch will pass forever because the broken code leaves loading stuck.
+
+❌ Weak — validates the broken behavior:
+```tsx
+it("handles API error", async () => {
+  global.fetch = jest.fn().mockRejectedValue(new Error("fail"))
+  render(<MyComponent />)
+  await waitFor(() => {
+    expect(screen.getByText("Loading...")).toBeInTheDocument() // passes on bug
+  })
+})
+```
+
+✅ Strong — asserts the error is silent and state is clean:
+```tsx
+it("handles API error gracefully", async () => {
+  global.fetch = jest.fn().mockRejectedValue(new Error("fail"))
+  render(<MyComponent />)
+  await waitFor(() => {
+    expect(screen.queryByText(/loading/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/error/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/failed/i)).not.toBeInTheDocument()
+  })
+})
+```
+
+Apply to any test covering: fetch errors, empty states, missing env vars, timeouts, or any code path where the UI is supposed to degrade silently.
 
 ---
 
