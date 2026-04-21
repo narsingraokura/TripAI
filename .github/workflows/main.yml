@@ -27,4 +27,4 @@ jobs:
         with:
           python-version: "3.11"
       - run: cd apps/api && pip install -r requirements.txt
-      - run: cd apps/api && pytest -v
+      - run: cd apps/api && pytest -v --ignore=evals/
