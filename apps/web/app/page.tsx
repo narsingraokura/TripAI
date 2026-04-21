@@ -3,6 +3,8 @@ import TripTile from "@/components/TripTile"
 const DEMO_TRIP = {
   tripId: process.env.NEXT_PUBLIC_TRIP_ID ?? "",
   tripName: "Europe 2026",
+  family: "Kura Family",
+  travelerCount: 4,
   dateRange: "Jun 19 – Jul 5",
   cities: ["London", "Paris", "Interlaken", "Milan"],
   href: "/trip",
@@ -27,7 +29,7 @@ export default function LandingPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <TripTile variant="demo" {...DEMO_TRIP} />
-          <TripTile variant="new" />
+          <TripTile variant="new" comingSoon={true} />
         </div>
 
       </div>

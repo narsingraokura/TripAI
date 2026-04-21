@@ -17,6 +17,8 @@ const DEMO_PROPS = {
   variant: "demo" as const,
   tripId: "trip-123",
   tripName: "Kura Europe 2026",
+  family: "Kura Family",
+  travelerCount: 4,
   dateRange: "Jun 19 – Jul 5",
   cities: ["London", "Paris", "Interlaken", "Milan"],
   href: "/trip",
@@ -40,9 +42,18 @@ describe("TripTile — demo variant", () => {
 
   it("renders trip name and date range", async () => {
     render(<TripTile {...DEMO_PROPS} />)
-    // findByText flushes microtasks (including the fetch), eliminating act() warnings
     expect(await screen.findByText("Kura Europe 2026")).toBeInTheDocument()
     expect(screen.getByText(/Jun 19/)).toBeInTheDocument()
+  })
+
+  it("renders DEMO badge", () => {
+    render(<TripTile {...DEMO_PROPS} />)
+    expect(screen.getByText("DEMO")).toBeInTheDocument()
+  })
+
+  it("renders family label", () => {
+    render(<TripTile {...DEMO_PROPS} />)
+    expect(screen.getByText("Kura Family")).toBeInTheDocument()
   })
 
   it("renders all city names", async () => {
@@ -54,7 +65,7 @@ describe("TripTile — demo variant", () => {
     })
   })
 
-  it("renders live stats from API", async () => {
+  it("renders live stats including traveler count", async () => {
     const { booked_count, total_count, locked_in } = MOCK_RESPONSE.summary
     const expectedUsd = new Intl.NumberFormat("en-US", {
       style: "currency",
@@ -70,6 +81,7 @@ describe("TripTile — demo variant", () => {
       expect(
         screen.getByText(new RegExp(expectedUsd.replace("$", "\\$")))
       ).toBeInTheDocument()
+      expect(screen.getByText(/4 travelers/)).toBeInTheDocument()
     })
   })
 
@@ -81,36 +93,42 @@ describe("TripTile — demo variant", () => {
     })
   })
 
-  it("handles API error gracefully", async () => {
+  it("hides stats on API error without showing error copy", async () => {
     global.fetch = jest.fn().mockRejectedValue(new Error("Network error"))
     render(<TripTile {...DEMO_PROPS} />)
     expect(screen.getByText("Kura Europe 2026")).toBeInTheDocument()
     await waitFor(() => {
       expect(screen.queryByText(/network error/i)).not.toBeInTheDocument()
       expect(screen.queryByText(/failed/i)).not.toBeInTheDocument()
+      expect(screen.queryByText(/loading/i)).not.toBeInTheDocument()
+      expect(screen.queryByText(/travelers/)).not.toBeInTheDocument()
     })
-    expect(screen.getByText("Loading trip data...")).toBeInTheDocument()
   })
 })
 
 describe("TripTile — new variant", () => {
   it("renders Plan a new trip label", () => {
-    render(<TripTile variant="new" />)
+    render(<TripTile variant="new" comingSoon={true} />)
     expect(screen.getByText("Plan a new trip")).toBeInTheDocument()
   })
 
-  it("shows Coming soon badge", () => {
-    render(<TripTile variant="new" />)
+  it("shows Coming soon badge when comingSoon is true", () => {
+    render(<TripTile variant="new" comingSoon={true} />)
     expect(screen.getByText("Coming soon")).toBeInTheDocument()
   })
 
+  it("hides Coming soon badge when comingSoon is false", () => {
+    render(<TripTile variant="new" comingSoon={false} />)
+    expect(screen.queryByText("Coming soon")).not.toBeInTheDocument()
+  })
+
   it("is not clickable", () => {
-    render(<TripTile variant="new" />)
+    render(<TripTile variant="new" comingSoon={true} />)
     expect(screen.queryByRole("link")).not.toBeInTheDocument()
   })
 
   it("has dashed border styling", () => {
-    const { container } = render(<TripTile variant="new" />)
+    const { container } = render(<TripTile variant="new" comingSoon={true} />)
     const tile = container.firstChild as HTMLElement
     expect(tile.className).toMatch(/dashed/)
   })
