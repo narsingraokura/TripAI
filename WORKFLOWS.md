@@ -279,6 +279,30 @@ TASK:
 
 ---
 
+## Pre-commit UI checklist (Developer)
+
+Before committing any new React component, verify all four:
+
+1. **PRD anatomy** — walk every row of the PRD anatomy table and confirm each element is rendered in the component and visible in the DOM.
+2. **Props completeness** — every prop named in the PRD type definition exists in the TypeScript type and is exercised by at least one test.
+3. **Error/loading states** — error and loading paths are tested for *absence* of artifacts, not presence (see error-state test principle in CLAUDE.md).
+4. **Component test exists** — `__tests__/ComponentName.test.tsx` exists and covers all prop variants (CLAUDE.md: "Every React component has a unit test").
+
+---
+
+## Script placement rule
+
+| Location | What goes there |
+|---|---|
+| `apps/api/scripts/` | Scripts humans run manually (index trip data, run smoke tests, validate evals) |
+| `apps/web/scripts/` | Frontend scripts humans run manually |
+| `.github/workflows/` | YAML files that only CI triggers — no `.sh` files here |
+| Repo root | Never `.sh` files |
+
+A `.sh` at the repo root is always misplaced — move it to the relevant `scripts/` directory.
+
+---
+
 ## Starting a session
 
 1. Open Claude.ai → define the goal with PM/Architect (this is where you are now)
