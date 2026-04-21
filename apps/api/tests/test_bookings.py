@@ -269,6 +269,7 @@ def test_patch_booking_returns_200():
     response = client.patch(
         f"/trips/{TRIP_ID}/bookings/{BOOKING_ID}",
         json={"status": "booked"},
+        headers={"X-API-Key": "test-key-12345"},
     )
     assert response.status_code == 200
 
@@ -278,6 +279,7 @@ def test_patch_booking_returns_updated_status_booked():
     body = client.patch(
         f"/trips/{TRIP_ID}/bookings/{BOOKING_ID}",
         json={"status": "booked"},
+        headers={"X-API-Key": "test-key-12345"},
     ).json()
     assert body["status"] == "booked"
 
@@ -287,6 +289,7 @@ def test_patch_booking_returns_updated_status_pending():
     body = client.patch(
         f"/trips/{TRIP_ID}/bookings/{BOOKING_ID}",
         json={"status": "pending"},
+        headers={"X-API-Key": "test-key-12345"},
     ).json()
     assert body["status"] == "pending"
 
@@ -296,6 +299,7 @@ def test_patch_booking_nonexistent_trip_returns_404():
     response = client.patch(
         f"/trips/{NONEXISTENT_TRIP_ID}/bookings/{BOOKING_ID}",
         json={"status": "booked"},
+        headers={"X-API-Key": "test-key-12345"},
     )
     assert response.status_code == 404
 
@@ -305,5 +309,6 @@ def test_patch_booking_nonexistent_booking_returns_404():
     response = client.patch(
         f"/trips/{TRIP_ID}/bookings/nonexistent-id",
         json={"status": "booked"},
+        headers={"X-API-Key": "test-key-12345"},
     )
     assert response.status_code == 404

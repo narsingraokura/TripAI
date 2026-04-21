@@ -382,7 +382,7 @@ def test_chat_index_triggers_indexing():
 
     with patch("main.index_trip", return_value=31) as mock_index:
         app.dependency_overrides[get_supabase] = lambda: mock_supabase
-        response = client.post(f"/trips/{TRIP_ID}/chat/index")
+        response = client.post(f"/trips/{TRIP_ID}/chat/index", headers={"X-API-Key": "test-key-12345"})
         app.dependency_overrides.clear()
 
     assert response.status_code == 200
@@ -399,7 +399,7 @@ def test_chat_index_404_for_unknown_trip():
     )
 
     app.dependency_overrides[get_supabase] = lambda: mock_supabase
-    response = client.post(f"/trips/{NONEXISTENT_TRIP_ID}/chat/index")
+    response = client.post(f"/trips/{NONEXISTENT_TRIP_ID}/chat/index", headers={"X-API-Key": "test-key-12345"})
     app.dependency_overrides.clear()
 
     assert response.status_code == 404

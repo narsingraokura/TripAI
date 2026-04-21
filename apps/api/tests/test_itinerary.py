@@ -212,6 +212,7 @@ def test_patch_itinerary_returns_200() -> None:
     response = client.patch(
         f"/trips/{TRIP_ID}/itinerary/{DATE_JUN20}",
         json={"title": "Updated Title"},
+        headers={"X-API-Key": "test-key-12345"},
     )
     assert response.status_code == 200
 
@@ -221,6 +222,7 @@ def test_patch_itinerary_updates_title() -> None:
     body = client.patch(
         f"/trips/{TRIP_ID}/itinerary/{DATE_JUN20}",
         json={"title": "New Title"},
+        headers={"X-API-Key": "test-key-12345"},
     ).json()
     assert body["title"] == "New Title"
 
@@ -231,6 +233,7 @@ def test_patch_itinerary_updates_plan() -> None:
     body = client.patch(
         f"/trips/{TRIP_ID}/itinerary/{DATE_JUN20}",
         json={"plan": new_plan},
+        headers={"X-API-Key": "test-key-12345"},
     ).json()
     assert body["plan"] == new_plan
 
@@ -240,6 +243,7 @@ def test_patch_itinerary_updates_intensity() -> None:
     body = client.patch(
         f"/trips/{TRIP_ID}/itinerary/{DATE_JUN20}",
         json={"intensity": "moderate"},
+        headers={"X-API-Key": "test-key-12345"},
     ).json()
     assert body["intensity"] == "moderate"
 
@@ -249,6 +253,7 @@ def test_patch_itinerary_nonexistent_trip_returns_404() -> None:
     response = client.patch(
         f"/trips/{NONEXISTENT_TRIP_ID}/itinerary/{DATE_JUN20}",
         json={"title": "Updated"},
+        headers={"X-API-Key": "test-key-12345"},
     )
     assert response.status_code == 404
 
@@ -258,6 +263,7 @@ def test_patch_itinerary_missing_date_returns_404() -> None:
     response = client.patch(
         f"/trips/{TRIP_ID}/itinerary/{MISSING_DATE}",
         json={"title": "Updated"},
+        headers={"X-API-Key": "test-key-12345"},
     )
     assert response.status_code == 404
 
@@ -267,6 +273,7 @@ def test_patch_itinerary_invalid_intensity_returns_422() -> None:
     response = client.patch(
         f"/trips/{TRIP_ID}/itinerary/{DATE_JUN20}",
         json={"intensity": "extreme"},
+        headers={"X-API-Key": "test-key-12345"},
     )
     assert response.status_code == 422
 
@@ -399,13 +406,13 @@ def _suggest_client(
 
 def test_suggest_returns_200() -> None:
     client = _suggest_client()
-    response = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest")
+    response = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest", headers={"X-API-Key": "test-key-12345"})
     assert response.status_code == 200
 
 
 def test_suggest_response_has_date_city_suggestions_keys() -> None:
     client = _suggest_client()
-    body = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest").json()
+    body = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest", headers={"X-API-Key": "test-key-12345"}).json()
     assert "date" in body
     assert "city" in body
     assert "suggestions" in body
@@ -413,14 +420,14 @@ def test_suggest_response_has_date_city_suggestions_keys() -> None:
 
 def test_suggest_response_date_and_city_match_day() -> None:
     client = _suggest_client()
-    body = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest").json()
+    body = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest", headers={"X-API-Key": "test-key-12345"}).json()
     assert body["date"] == DATE_TITLIS
     assert body["city"] == "Interlaken"
 
 
 def test_suggest_returns_exactly_3_suggestions() -> None:
     client = _suggest_client()
-    suggestions = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest").json()["suggestions"]
+    suggestions = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest", headers={"X-API-Key": "test-key-12345"}).json()["suggestions"]
     assert len(suggestions) == 3
 
 
@@ -428,7 +435,7 @@ def test_suggest_returns_exactly_3_suggestions() -> None:
 
 def test_each_suggestion_has_all_6_fields() -> None:
     client = _suggest_client()
-    suggestions = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest").json()["suggestions"]
+    suggestions = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest", headers={"X-API-Key": "test-key-12345"}).json()["suggestions"]
     required = {"title", "description", "why_fits", "cost_delta", "intensity", "booking_required"}
     for s in suggestions:
         assert required.issubset(s.keys())
@@ -436,7 +443,7 @@ def test_each_suggestion_has_all_6_fields() -> None:
 
 def test_suggestion_intensity_values_are_valid() -> None:
     client = _suggest_client()
-    suggestions = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest").json()["suggestions"]
+    suggestions = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest", headers={"X-API-Key": "test-key-12345"}).json()["suggestions"]
     valid = {"light", "moderate", "busy"}
     for s in suggestions:
         assert s["intensity"] in valid
@@ -444,14 +451,14 @@ def test_suggestion_intensity_values_are_valid() -> None:
 
 def test_suggestion_cost_delta_is_integer() -> None:
     client = _suggest_client()
-    suggestions = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest").json()["suggestions"]
+    suggestions = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest", headers={"X-API-Key": "test-key-12345"}).json()["suggestions"]
     for s in suggestions:
         assert isinstance(s["cost_delta"], int)
 
 
 def test_suggestion_booking_required_is_boolean() -> None:
     client = _suggest_client()
-    suggestions = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest").json()["suggestions"]
+    suggestions = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest", headers={"X-API-Key": "test-key-12345"}).json()["suggestions"]
     for s in suggestions:
         assert isinstance(s["booking_required"], bool)
 
@@ -460,14 +467,14 @@ def test_suggestion_booking_required_is_boolean() -> None:
 
 def test_titlis_suggestions_include_at_least_one_cheaper_option() -> None:
     client = _suggest_client()
-    suggestions = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest").json()["suggestions"]
+    suggestions = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest", headers={"X-API-Key": "test-key-12345"}).json()["suggestions"]
     cost_deltas = [s["cost_delta"] for s in suggestions]
     assert any(d < 0 for d in cost_deltas), f"Expected cheaper option (negative delta), got: {cost_deltas}"
 
 
 def test_titlis_suggestions_include_at_least_one_similar_cost_option() -> None:
     client = _suggest_client()
-    suggestions = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest").json()["suggestions"]
+    suggestions = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest", headers={"X-API-Key": "test-key-12345"}).json()["suggestions"]
     cost_deltas = [s["cost_delta"] for s in suggestions]
     assert any(abs(d) <= 50 for d in cost_deltas), f"Expected similar-cost option (delta ±50), got: {cost_deltas}"
 
@@ -480,7 +487,7 @@ def test_claude_called_with_city_in_user_message() -> None:
     app.dependency_overrides[get_supabase] = lambda: mock_supabase
     app.dependency_overrides[get_anthropic] = lambda: mock_claude
     client = TestClient(app)
-    client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest")
+    client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest", headers={"X-API-Key": "test-key-12345"})
     user_content = mock_claude.messages.create.call_args.kwargs["messages"][0]["content"]
     assert "Interlaken" in user_content
 
@@ -491,7 +498,7 @@ def test_claude_called_with_budget_in_user_message() -> None:
     app.dependency_overrides[get_supabase] = lambda: mock_supabase
     app.dependency_overrides[get_anthropic] = lambda: mock_claude
     client = TestClient(app)
-    client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest")
+    client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest", headers={"X-API-Key": "test-key-12345"})
     user_content = mock_claude.messages.create.call_args.kwargs["messages"][0]["content"]
     assert "budget" in user_content.lower() or "remaining" in user_content.lower()
 
@@ -502,7 +509,7 @@ def test_claude_called_with_temperature_07() -> None:
     app.dependency_overrides[get_supabase] = lambda: mock_supabase
     app.dependency_overrides[get_anthropic] = lambda: mock_claude
     client = TestClient(app)
-    client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest")
+    client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest", headers={"X-API-Key": "test-key-12345"})
     assert mock_claude.messages.create.call_args.kwargs["temperature"] == 0.7
 
 
@@ -510,13 +517,13 @@ def test_claude_called_with_temperature_07() -> None:
 
 def test_suggest_trip_not_found_returns_404() -> None:
     client = _suggest_client(trip_found=False)
-    response = client.post(f"/trips/{NONEXISTENT_TRIP_ID}/itinerary/{DATE_TITLIS}/suggest")
+    response = client.post(f"/trips/{NONEXISTENT_TRIP_ID}/itinerary/{DATE_TITLIS}/suggest", headers={"X-API-Key": "test-key-12345"})
     assert response.status_code == 404
 
 
 def test_suggest_day_not_found_returns_404() -> None:
     client = _suggest_client(day_found=False)
-    response = client.post(f"/trips/{TRIP_ID}/itinerary/2026-01-01/suggest")
+    response = client.post(f"/trips/{TRIP_ID}/itinerary/2026-01-01/suggest", headers={"X-API-Key": "test-key-12345"})
     assert response.status_code == 404
 
 
@@ -531,7 +538,7 @@ def test_malformed_json_from_claude_returns_502() -> None:
     app.dependency_overrides[get_supabase] = lambda: mock_supabase
     app.dependency_overrides[get_anthropic] = lambda: mock_claude
     client = TestClient(app)
-    response = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest")
+    response = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest", headers={"X-API-Key": "test-key-12345"})
     assert response.status_code == 502
 
 
@@ -544,7 +551,7 @@ def test_markdown_fenced_json_from_claude_returns_200() -> None:
     app.dependency_overrides[get_supabase] = lambda: mock_supabase
     app.dependency_overrides[get_anthropic] = lambda: mock_claude
     client = TestClient(app)
-    response = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest")
+    response = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest", headers={"X-API-Key": "test-key-12345"})
     assert response.status_code == 200
 
 
@@ -558,7 +565,7 @@ def test_wrong_suggestion_count_returns_502() -> None:
     app.dependency_overrides[get_supabase] = lambda: mock_supabase
     app.dependency_overrides[get_anthropic] = lambda: mock_claude
     client = TestClient(app)
-    response = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest")
+    response = client.post(f"/trips/{TRIP_ID}/itinerary/{DATE_TITLIS}/suggest", headers={"X-API-Key": "test-key-12345"})
     assert response.status_code == 502
 
 
@@ -619,13 +626,13 @@ def _create_client(trip_found: bool = True, date_taken: bool = False) -> TestCli
 
 def test_create_day_returns_201() -> None:
     client = _create_client()
-    response = client.post(f"/trips/{TRIP_ID}/itinerary", json=NEW_DAY_BODY)
+    response = client.post(f"/trips/{TRIP_ID}/itinerary", json=NEW_DAY_BODY, headers={"X-API-Key": "test-key-12345"})
     assert response.status_code == 201
 
 
 def test_create_day_returns_new_day_fields() -> None:
     client = _create_client()
-    body = client.post(f"/trips/{TRIP_ID}/itinerary", json=NEW_DAY_BODY).json()
+    body = client.post(f"/trips/{TRIP_ID}/itinerary", json=NEW_DAY_BODY, headers={"X-API-Key": "test-key-12345"}).json()
     assert body["date"] == DATE_NEW
     assert body["city"] == "Interlaken"
     assert body["title"] == "Rest Day"
@@ -633,19 +640,19 @@ def test_create_day_returns_new_day_fields() -> None:
 
 def test_create_day_nonexistent_trip_returns_404() -> None:
     client = _create_client(trip_found=False)
-    response = client.post(f"/trips/{NONEXISTENT_TRIP_ID}/itinerary", json=NEW_DAY_BODY)
+    response = client.post(f"/trips/{NONEXISTENT_TRIP_ID}/itinerary", json=NEW_DAY_BODY, headers={"X-API-Key": "test-key-12345"})
     assert response.status_code == 404
 
 
 def test_create_day_duplicate_date_returns_409() -> None:
     client = _create_client(date_taken=True)
-    response = client.post(f"/trips/{TRIP_ID}/itinerary", json=NEW_DAY_BODY)
+    response = client.post(f"/trips/{TRIP_ID}/itinerary", json=NEW_DAY_BODY, headers={"X-API-Key": "test-key-12345"})
     assert response.status_code == 409
 
 
 def test_create_day_missing_required_fields_returns_422() -> None:
     client = _create_client()
-    response = client.post(f"/trips/{TRIP_ID}/itinerary", json={"date": DATE_NEW})
+    response = client.post(f"/trips/{TRIP_ID}/itinerary", json={"date": DATE_NEW}, headers={"X-API-Key": "test-key-12345"})
     assert response.status_code == 422
 
 
@@ -683,17 +690,17 @@ def _delete_client(trip_found: bool = True, day_found: bool = True) -> TestClien
 
 def test_delete_day_returns_204() -> None:
     client = _delete_client()
-    response = client.delete(f"/trips/{TRIP_ID}/itinerary/{DATE_JUN20}")
+    response = client.delete(f"/trips/{TRIP_ID}/itinerary/{DATE_JUN20}", headers={"X-API-Key": "test-key-12345"})
     assert response.status_code == 204
 
 
 def test_delete_day_nonexistent_trip_returns_404() -> None:
     client = _delete_client(trip_found=False)
-    response = client.delete(f"/trips/{NONEXISTENT_TRIP_ID}/itinerary/{DATE_JUN20}")
+    response = client.delete(f"/trips/{NONEXISTENT_TRIP_ID}/itinerary/{DATE_JUN20}", headers={"X-API-Key": "test-key-12345"})
     assert response.status_code == 404
 
 
 def test_delete_day_not_found_returns_404() -> None:
     client = _delete_client(day_found=False)
-    response = client.delete(f"/trips/{TRIP_ID}/itinerary/{MISSING_DATE}")
+    response = client.delete(f"/trips/{TRIP_ID}/itinerary/{MISSING_DATE}", headers={"X-API-Key": "test-key-12345"})
     assert response.status_code == 404

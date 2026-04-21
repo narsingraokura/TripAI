@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from supabase import Client, create_client
 
+from auth import require_admin_key
 from rag.indexer import index_trip
 from routes.chat import router as chat_router
 
@@ -203,6 +204,7 @@ def patch_booking(
     booking_id: str,
     update: BookingStatusUpdate,
     supabase: Client = Depends(get_supabase),
+    _auth: None = Depends(require_admin_key),
 ) -> Booking:
     trip_result = supabase.table("trips").select("id").eq("id", trip_id).execute()
     if not trip_result.data:
@@ -264,6 +266,7 @@ def patch_itinerary_day(
     date: str,
     update: ItineraryDayUpdate,
     supabase: Client = Depends(get_supabase),
+    _auth: None = Depends(require_admin_key),
 ) -> ItineraryDay:
     trip_result = supabase.table("trips").select("id").eq("id", trip_id).execute()
     if not trip_result.data:
@@ -296,6 +299,7 @@ def suggest_itinerary_alternatives(
     date: str,
     supabase: Client = Depends(get_supabase),
     claude: anthropic.Anthropic = Depends(get_anthropic),
+    _auth: None = Depends(require_admin_key),
 ) -> SuggestResponse:
     trip_result = supabase.table("trips").select("id").eq("id", trip_id).execute()
     if not trip_result.data:
@@ -374,6 +378,7 @@ def create_itinerary_day(
     trip_id: str,
     body: ItineraryDayCreate,
     supabase: Client = Depends(get_supabase),
+    _auth: None = Depends(require_admin_key),
 ) -> ItineraryDay:
     trip_result = supabase.table("trips").select("id").eq("id", trip_id).execute()
     if not trip_result.data:
@@ -409,6 +414,7 @@ def delete_itinerary_day(
     trip_id: str,
     date: str,
     supabase: Client = Depends(get_supabase),
+    _auth: None = Depends(require_admin_key),
 ) -> Response:
     trip_result = supabase.table("trips").select("id").eq("id", trip_id).execute()
     if not trip_result.data:
@@ -432,6 +438,7 @@ def delete_itinerary_day(
 def chat_index(
     trip_id: str,
     supabase: Client = Depends(get_supabase),
+    _auth: None = Depends(require_admin_key),
 ) -> dict[str, int]:
     trip_result = supabase.table("trips").select("id").eq("id", trip_id).execute()
     if not trip_result.data:
