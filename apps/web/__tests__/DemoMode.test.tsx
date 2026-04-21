@@ -1,10 +1,11 @@
-import { render, screen } from "@testing-library/react"
+import { render, screen, waitFor } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { DemoModeProvider, useIsDemo } from "@/components/DemoModeProvider"
 import { DemoBanner } from "@/components/DemoBanner"
 import DayCard from "@/components/itinerary/DayCard"
 import ItineraryView from "@/components/itinerary/ItineraryView"
 import Page from "@/app/trip/page"
-import { fetchBookings, fetchItinerary } from "@/lib/api"
+import { fetchBookings, fetchItinerary, patchBookingStatus } from "@/lib/api"
 import type { ItineraryDay, BookingsResponse } from "@/lib/api"
 
 // ── Mocks ──────────────────────────────────────────────────────────────────────
@@ -53,6 +54,7 @@ jest.mock("@/components/ui/checkbox", () => ({
 
 const mockFetchBookings = fetchBookings as jest.MockedFunction<typeof fetchBookings>
 const mockFetchItinerary = fetchItinerary as jest.MockedFunction<typeof fetchItinerary>
+const mockPatchBookingStatus = patchBookingStatus as jest.MockedFunction<typeof patchBookingStatus>
 
 // ── Fixtures ───────────────────────────────────────────────────────────────────
 
@@ -190,6 +192,35 @@ describe("DemoBanner", () => {
   })
 })
 
+// ── DemoBanner in /trip loading and error states ───────────────────────────────
+
+describe("DemoBanner in /trip loading and error states", () => {
+  it("banner is visible during the loading state (fetch never resolves)", () => {
+    process.env.NEXT_PUBLIC_DEMO_MODE = "true"
+    mockFetchBookings.mockReturnValue(new Promise(() => {}))
+    render(
+      <DemoModeProvider>
+        <Page />
+      </DemoModeProvider>,
+    )
+    expect(screen.getByText(/demo mode/i)).toBeInTheDocument()
+  })
+
+  it("banner is visible on the error screen after fetch fails", async () => {
+    process.env.NEXT_PUBLIC_DEMO_MODE = "true"
+    mockFetchBookings.mockRejectedValue(new Error("fail"))
+    render(
+      <DemoModeProvider>
+        <Page />
+      </DemoModeProvider>,
+    )
+    await waitFor(() => {
+      expect(screen.getByText(/could not load bookings/i)).toBeInTheDocument()
+    })
+    expect(screen.getByText(/demo mode/i)).toBeInTheDocument()
+  })
+})
+
 // ── Booking checkboxes ─────────────────────────────────────────────────────────
 
 describe("Booking checkboxes in demo mode", () => {
@@ -226,6 +257,20 @@ describe("Booking checkboxes in demo mode", () => {
     )
     await screen.findByText("Flights SFO → LHR")
     expect(screen.getByRole("checkbox")).not.toBeDisabled()
+  })
+
+  it("clicking disabled checkbox in demo mode does not call patchBookingStatus", async () => {
+    process.env.NEXT_PUBLIC_DEMO_MODE = "true"
+    mockFetchBookings.mockResolvedValue(MOCK_BOOKING_RESPONSE)
+    const user = userEvent.setup()
+    render(
+      <DemoModeProvider>
+        <Page />
+      </DemoModeProvider>,
+    )
+    await screen.findByText("Flights SFO → LHR")
+    await user.click(screen.getByRole("checkbox"))
+    expect(mockPatchBookingStatus).not.toHaveBeenCalled()
   })
 })
 
