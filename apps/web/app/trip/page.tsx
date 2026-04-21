@@ -5,6 +5,8 @@ import { Progress } from "@/components/ui/progress"
 import { Checkbox } from "@/components/ui/checkbox"
 import { fetchBookings, patchBookingStatus } from "@/lib/api"
 import type { Booking, BookingsResponse, BookingStatus, Urgency } from "@/lib/api"
+import { useIsDemo } from "@/components/DemoModeProvider"
+import { DemoBanner } from "@/components/DemoBanner"
 
 const BUDGET_CAP = 25000
 
@@ -23,13 +25,16 @@ function BookingRow({
 }) {
   const checked = booking.status === "booked"
   const { label, className } = urgencyConfig[booking.urgency]
+  const isDemo = useIsDemo()
 
   return (
     <div className={`flex items-start gap-3 py-3 border-b border-slate-100 last:border-0 ${checked ? "opacity-60" : ""}`}>
       <Checkbox
         checked={checked}
-        onCheckedChange={() => onToggle(booking.id, booking.status)}
-        className="mt-1 shrink-0"
+        onCheckedChange={isDemo ? undefined : () => onToggle(booking.id, booking.status)}
+        disabled={isDemo}
+        aria-disabled={isDemo}
+        className={`mt-1 shrink-0${isDemo ? " opacity-50 cursor-not-allowed" : ""}`}
       />
       <div className="flex-1 min-w-0">
         <p className={`text-sm font-medium ${checked ? "line-through text-slate-400" : "text-slate-900"}`}>
@@ -122,6 +127,7 @@ export default function Page() {
   if (loadState === "loading") {
     return (
       <main className="min-h-screen bg-slate-50">
+        <DemoBanner />
         {header}
         <div
           className="max-w-2xl mx-auto px-4 py-12 text-center text-slate-400"
@@ -137,6 +143,7 @@ export default function Page() {
   if (loadState === "error" || !data) {
     return (
       <main className="min-h-screen bg-slate-50">
+        <DemoBanner />
         {header}
         <div className="max-w-2xl mx-auto px-4 py-12 text-center">
           <p className="text-slate-600">
@@ -165,6 +172,7 @@ export default function Page() {
 
   return (
     <main className="min-h-screen bg-slate-50">
+      <DemoBanner />
       {header}
 
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">

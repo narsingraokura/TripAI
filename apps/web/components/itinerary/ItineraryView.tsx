@@ -12,6 +12,7 @@ import type { ItineraryDay, ItineraryDayCreate, Intensity, Suggestion } from "@/
 import { Button } from "@/components/ui/button"
 import AddDayForm from "./AddDayForm"
 import CityGroup from "./CityGroup"
+import { useIsDemo } from "@/components/DemoModeProvider"
 
 type EditDraft = { title: string; plan: string; intensity: Intensity }
 
@@ -63,6 +64,7 @@ export default function ItineraryView() {
   const [suggestLoading, setSuggestLoading] = useState(false)
   const [suggestError, setSuggestError] = useState<string | null>(null)
   const [showAddForm, setShowAddForm] = useState(false)
+  const isDemo = useIsDemo()
 
   const loadDays = useCallback(async () => {
     setLoading(true)
@@ -239,15 +241,17 @@ export default function ItineraryView() {
 
   return (
     <div className="space-y-8">
-      <div>
-        {showAddForm ? (
-          <AddDayForm onAdd={handleAddDay} onCancel={() => setShowAddForm(false)} />
-        ) : (
-          <Button variant="outline" size="sm" onClick={() => setShowAddForm(true)}>
-            + Add day
-          </Button>
-        )}
-      </div>
+      {!isDemo && (
+        <div>
+          {showAddForm ? (
+            <AddDayForm onAdd={handleAddDay} onCancel={() => setShowAddForm(false)} />
+          ) : (
+            <Button variant="outline" size="sm" onClick={() => setShowAddForm(true)}>
+              + Add day
+            </Button>
+          )}
+        </div>
+      )}
       {Array.from(cityGroups.entries()).map(([city, cityDays]) => (
         <CityGroup
           key={city}

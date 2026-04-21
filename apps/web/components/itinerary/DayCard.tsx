@@ -1,9 +1,12 @@
+"use client"
+
 import { ChevronDown, ChevronUp } from "lucide-react"
 import type { ItineraryDay, Intensity, Suggestion } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import IntensityBadge from "./IntensityBadge"
 import DayEditor from "./DayEditor"
 import SuggestionPanel from "./SuggestionPanel"
+import { useIsDemo } from "@/components/DemoModeProvider"
 
 type DayCardProps = {
   day: ItineraryDay
@@ -53,6 +56,8 @@ export default function DayCard({
   onSelectSuggestion,
   onDelete,
 }: DayCardProps) {
+  const isDemo = useIsDemo()
+
   return (
     <div className="border border-slate-200 rounded-lg overflow-hidden bg-white">
       {/* Header — click to expand/collapse plan */}
@@ -79,8 +84,8 @@ export default function DayCard({
         )}
       </button>
 
-      {/* Action row — always visible, hidden only during editing */}
-      {!isEditing && (
+      {/* Action row — visible only when not editing and not in demo mode */}
+      {!isEditing && !isDemo && (
         <div className="px-4 py-2 border-t border-slate-100 flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={onStartEdit}>
             Edit
