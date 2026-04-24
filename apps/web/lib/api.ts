@@ -206,6 +206,114 @@ export type Suggestion = {
   booking_required: boolean
 }
 
+// ── Phase-2 itinerary types (new /api/ prefix backend) ────────────────────────
+
+export type ApiGoal = {
+  id: string
+  trip_id: string
+  goal_type: "preset" | "custom"
+  label: string
+  created_at: string
+}
+
+export type ApiConstraintType =
+  | "must_visit"
+  | "must_avoid"
+  | "budget_cap"
+  | "time_constraint"
+  | "custom"
+
+export type ApiConstraint = {
+  id: string
+  trip_id: string
+  constraint_type: ApiConstraintType
+  description: string
+  value: number | null
+  created_at: string
+}
+
+export type ApiActivityCategory =
+  | "food"
+  | "transit"
+  | "sightseeing"
+  | "lodging"
+  | "shopping"
+  | "activity"
+
+export type ApiActivity = {
+  id: string
+  day_id: string
+  position: number
+  title: string
+  time_slot: "morning" | "afternoon" | "evening" | "specific"
+  specific_time: string | null
+  category: ApiActivityCategory
+  estimated_cost: number | null
+  notes: string | null
+  created_at: string
+}
+
+export type ApiDayType = "exploration" | "rest" | "transit"
+
+export type ApiDay = {
+  id: string
+  trip_id: string
+  position: number
+  date: string | null
+  city: string | null
+  day_type: ApiDayType
+  notes: string | null
+  created_at: string
+  updated_at: string
+  activities: ApiActivity[]
+}
+
+export type ApiItinerary = {
+  days: ApiDay[]
+  goals: ApiGoal[]
+  constraints: ApiConstraint[]
+}
+
+export async function fetchItineraryFull(): Promise<ApiItinerary> {
+  const res = await fetch(`${getApiBase()}/api/trips/${getTripId()}/itinerary`)
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  return res.json() as Promise<ApiItinerary>
+}
+
+export async function putTripGoals(
+  goals: Array<{ goal_type: "preset" | "custom"; label: string }>,
+): Promise<ApiGoal[]> {
+  const res = await fetch(`${getApiBase()}/api/trips/${getTripId()}/goals`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", "X-API-Key": getAdminApiKey() },
+    body: JSON.stringify({ goals }),
+  })
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  return res.json() as Promise<ApiGoal[]>
+}
+
+export async function postTripConstraint(body: {
+  constraint_type: ApiConstraintType
+  description: string
+  value?: number
+}): Promise<ApiConstraint> {
+  const res = await fetch(`${getApiBase()}/api/trips/${getTripId()}/constraints`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-API-Key": getAdminApiKey() },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  return res.json() as Promise<ApiConstraint>
+}
+
+export async function deleteTripConstraint(constraintId: string): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/api/trips/${getTripId()}/constraints/${constraintId}`,
+    { method: "DELETE", headers: { "X-API-Key": getAdminApiKey() } },
+  )
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+}
+
 type SuggestApiResponse = {
   date: string
   city: string

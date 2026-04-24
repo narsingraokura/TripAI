@@ -5,6 +5,10 @@ import {
   deleteItineraryDay,
   fetchSuggestions,
   streamChat,
+  fetchItineraryFull,
+  putTripGoals,
+  postTripConstraint,
+  deleteTripConstraint,
 } from "@/lib/api"
 
 // ── Environment ────────────────────────────────────────────────────────────────
@@ -104,5 +108,97 @@ describe("getAdminApiKey throws when env var is missing", () => {
       "NEXT_PUBLIC_ADMIN_API_KEY is not set",
     )
     expect(global.fetch).not.toHaveBeenCalled()
+  })
+})
+
+// ── Phase-2 API functions ──────────────────────────────────────────────────────
+
+describe("fetchItineraryFull", () => {
+  it("hits /api/trips/{tripId}/itinerary", async () => {
+    mockFetchOk({ days: [], goals: [], constraints: [] })
+    await fetchItineraryFull()
+    const url = (global.fetch as jest.Mock).mock.calls[0][0] as string
+    expect(url).toBe(`${API_BASE}/api/trips/${TRIP_ID}/itinerary`)
+  })
+
+  it("does not send X-API-Key (read-only endpoint)", async () => {
+    mockFetchOk({ days: [], goals: [], constraints: [] })
+    await fetchItineraryFull()
+    expect(capturedHeaders()["X-API-Key"]).toBeUndefined()
+  })
+})
+
+describe("putTripGoals", () => {
+  it("sends X-API-Key header", async () => {
+    mockFetchOk([])
+    await putTripGoals([])
+    expect(capturedHeaders()["X-API-Key"]).toBe(ADMIN_KEY)
+  })
+
+  it("uses PUT method", async () => {
+    mockFetchOk([])
+    await putTripGoals([])
+    const opts = (global.fetch as jest.Mock).mock.calls[0][1] as RequestInit
+    expect(opts.method).toBe("PUT")
+  })
+
+  it("serialises goals into { goals: [...] } body", async () => {
+    mockFetchOk([])
+    await putTripGoals([{ goal_type: "preset", label: "Cultural experiences" }])
+    const opts = (global.fetch as jest.Mock).mock.calls[0][1] as RequestInit
+    expect(JSON.parse(opts.body as string)).toEqual({
+      goals: [{ goal_type: "preset", label: "Cultural experiences" }],
+    })
+  })
+})
+
+describe("postTripConstraint", () => {
+  it("sends X-API-Key header", async () => {
+    mockFetchOk({
+      id: "c1",
+      trip_id: TRIP_ID,
+      constraint_type: "custom",
+      description: "test",
+      value: null,
+      created_at: "",
+    })
+    await postTripConstraint({ constraint_type: "custom", description: "test" })
+    expect(capturedHeaders()["X-API-Key"]).toBe(ADMIN_KEY)
+  })
+
+  it("hits /api/trips/{tripId}/constraints", async () => {
+    mockFetchOk({
+      id: "c1",
+      trip_id: TRIP_ID,
+      constraint_type: "custom",
+      description: "test",
+      value: null,
+      created_at: "",
+    })
+    await postTripConstraint({ constraint_type: "custom", description: "test" })
+    const url = (global.fetch as jest.Mock).mock.calls[0][0] as string
+    expect(url).toBe(`${API_BASE}/api/trips/${TRIP_ID}/constraints`)
+  })
+})
+
+describe("deleteTripConstraint", () => {
+  it("sends X-API-Key header", async () => {
+    mockFetchOk(null)
+    await deleteTripConstraint("con-1")
+    expect(capturedHeaders()["X-API-Key"]).toBe(ADMIN_KEY)
+  })
+
+  it("hits /api/trips/{tripId}/constraints/{id}", async () => {
+    mockFetchOk(null)
+    await deleteTripConstraint("con-1")
+    const url = (global.fetch as jest.Mock).mock.calls[0][0] as string
+    expect(url).toBe(`${API_BASE}/api/trips/${TRIP_ID}/constraints/con-1`)
+  })
+
+  it("uses DELETE method", async () => {
+    mockFetchOk(null)
+    await deleteTripConstraint("con-1")
+    const opts = (global.fetch as jest.Mock).mock.calls[0][1] as RequestInit
+    expect(opts.method).toBe("DELETE")
   })
 })
