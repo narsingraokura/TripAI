@@ -129,7 +129,8 @@ When one role hands off to the next, the output must include:
 ```
 ## Handoff: [From Role] → [To Role]
 **What was done:** [1-2 sentences]
-**Files changed:** [list]
+**Commit hash:** [short sha — required; Reviewer uses this to run git show <hash>]
+**Files changed:** [list every file and why it changed]
 **Tests status:** [green/red + count]
 **Next step:** [what the receiving role should do]
 **Blockers:** [anything the next role needs to know]
@@ -220,9 +221,15 @@ AUTONOMY RULES:
 YOUR JOB: Protect code quality. Catch what the developer missed.
 
 WORKFLOW:
-1. Read the diff: git diff HEAD~1
+1. Orient to the commit under review — never assume HEAD is the right commit:
+   a. git log --oneline -5           (find the commit hash from the handoff)
+   b. git show <hash> --stat         (confirm files match the handoff's "Files changed")
+   c. git show <hash>                (read the full diff)
+   If the files in the diff don't match the handoff's "Files changed" list, stop
+   and reconcile before writing a single finding.
 2. Check each file against CLAUDE.md standards
-3. Run tests to confirm green: pytest -v (api) and npm test (web)
+3. Run tests to confirm green: pytest tests/ -v (api) and npm test (web)
+   Use absolute paths — relative paths fail when the shell cwd is wrong.
 4. Review checklist:
    - Are new functions tested?
    - Are API keys read from env, not hardcoded?
@@ -261,15 +268,26 @@ PRODUCTION STATE:
 - Database: Supabase (shared local + prod)
 
 DEPLOYMENT CHECKLIST (show this before deploying):
+0. Run `git status` — the Tester role cannot commit (BLOCK). If there are untracked test
+   files (e.g. `__tests__/api.test.ts`, `tests/test_auth_adversarial.py`), commit them
+   now (AUTO) before pushing. Message: `test: <description of what the tests cover>`
 1. All tests green locally? (pytest + jest)
 2. What commits are being pushed? (git log --oneline origin/main..HEAD)
 3. Any new env vars needed in Railway/Vercel?
+   ⚠️  NEXT_PUBLIC_* vars (Vercel) are BUILD-TIME — baked into the JS bundle on push.
+       If any are missing, they will NOT be present in this deploy.
+       → Confirm they are set in the Vercel dashboard BEFORE pushing.
+       → Railway env vars are RUNTIME — they can be set after push.
+       → Block the push if any required NEXT_PUBLIC_* var is unconfirmed.
 4. Any DB schema changes? (if yes, run SQL first)
 5. Estimated cost impact?
 
 After deploying:
-- Verify /health on Railway
-- Verify frontend loads on Vercel
+- Verify /health on Railway immediately (Railway deploys in ~30s)
+- Wait ~3 minutes for Vercel build to finish before checking frontend URLs.
+  If `gh` is unauthenticated, ask user to confirm build is green at
+  vercel.com/[project]/deployments before running WebFetch smoke tests.
+- Verify frontend loads on Vercel (after build confirmed green)
 - Run one manual chat query against production
 - Report status
 
@@ -300,6 +318,33 @@ Before committing any new React component, verify all four:
 | Repo root | Never `.sh` files |
 
 A `.sh` at the repo root is always misplaced — move it to the relevant `scripts/` directory.
+
+---
+
+## Agent Infrastructure (how story prompts work)
+
+### The three-file pattern
+Every story uses three types of files:
+1. **Role template** (`.claude/roles/[role].md`) — who the agent is, autonomy rules, handoff format
+2. **Skill files** (`.claude/skills/[domain].md`) — domain knowledge for the feature area
+3. **Story prompt** — fills in story-specific requirements, references role + skills
+
+Role templates and skill files are maintained by the Coach and should not be modified by
+Developer, Reviewer, Tester, or DevOps agents.
+
+### Starting a new story
+1. Pick the role for this session (developer, reviewer, tester, devops)
+2. Copy `.claude/prompts/story-prompt-template.md`
+3. Fill in the story ID, title, branch, requirements, and technical guidance
+4. Paste into a fresh Claude Code session
+
+### Composability rule
+A story prompt is intentionally short (~30 lines). It should NOT repeat:
+- Coding standards (those are in `CLAUDE.md` + the role template)
+- Workflow instructions (those are in the role template)
+- Domain knowledge about components or API shapes (those are in the skill file)
+
+If you find yourself adding conventions to a story prompt, move them to the right file instead.
 
 ---
 
