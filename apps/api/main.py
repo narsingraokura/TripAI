@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from supabase import Client, create_client
 
+from app.routers.itinerary import router as itinerary_router
 from auth import require_admin_key
 from rag.indexer import index_trip
 from routes.chat import router as chat_router
@@ -448,3 +449,4 @@ def chat_index(
 
 
 app.include_router(chat_router)
+app.include_router(itinerary_router)
