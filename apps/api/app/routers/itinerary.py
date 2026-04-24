@@ -75,11 +75,12 @@ def bulk_upsert_goals(
     _auth: None = Depends(require_admin_key),
 ) -> list[Goal]:
     _get_trip_or_404(trip_id, supabase)
+    supabase.table("trip_goals").delete().eq("trip_id", trip_id).execute()
     rows = [
         {"trip_id": trip_id, "goal_type": g.goal_type, "label": g.label}
         for g in body.goals
     ]
-    result = supabase.table("trip_goals").upsert(rows, on_conflict="trip_id,label").execute()
+    result = supabase.table("trip_goals").insert(rows).execute()
     return [Goal(**row) for row in result.data]
 
 

@@ -110,9 +110,12 @@ def test_bulk_upsert_goals_returns_200() -> None:
         if name == "trips":
             return _make_trip_chain()
         chain = MagicMock()
-        upsert_response = MagicMock()
-        upsert_response.data = [MOCK_GOAL, MOCK_GOAL_2]
-        chain.upsert.return_value.execute.return_value = upsert_response
+        delete_response = MagicMock()
+        delete_response.data = []
+        chain.delete.return_value.eq.return_value.execute.return_value = delete_response
+        insert_response = MagicMock()
+        insert_response.data = [MOCK_GOAL, MOCK_GOAL_2]
+        chain.insert.return_value.execute.return_value = insert_response
         return chain
 
     mock_sb.table.side_effect = table_side_effect
@@ -129,6 +132,43 @@ def test_bulk_upsert_goals_returns_200() -> None:
     )
     assert response.status_code == 200
     assert len(response.json()) == 2
+
+
+def test_bulk_put_goals_removes_old_goals() -> None:
+    """PUT replaces the full goal list; goals not in the new list are gone."""
+    mock_sb = MagicMock()
+    goals_chain = MagicMock()
+
+    delete_response = MagicMock()
+    delete_response.data = []
+    goals_chain.delete.return_value.eq.return_value.execute.return_value = delete_response
+
+    insert_response = MagicMock()
+    insert_response.data = [MOCK_GOAL, MOCK_GOAL_2]
+    goals_chain.insert.return_value.execute.return_value = insert_response
+
+    def table_side_effect(name: str) -> MagicMock:
+        if name == "trips":
+            return _make_trip_chain()
+        return goals_chain
+
+    mock_sb.table.side_effect = table_side_effect
+    client = _make_client(mock_sb)
+    response = client.put(
+        f"/api/trips/{TRIP_ID}/goals",
+        json={
+            "goals": [
+                {"goal_type": "preset", "label": "Cultural immersion"},
+                {"goal_type": "custom", "label": "Visit family friends"},
+            ]
+        },
+        headers={"X-API-Key": "test-key-12345"},
+    )
+    assert response.status_code == 200
+    labels = {g["label"] for g in response.json()}
+    assert labels == {"Cultural immersion", "Visit family friends"}
+    goals_chain.delete.assert_called_once()
+    goals_chain.upsert.assert_not_called()
 
 
 def test_delete_goal_returns_204() -> None:
