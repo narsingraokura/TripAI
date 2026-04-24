@@ -116,6 +116,7 @@ export default function ItineraryPageClient() {
   const [expandedDayId, setExpandedDayId] = useState<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [savingGoals, setSavingGoals] = useState(false)
+  const [goalError, setGoalError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -154,8 +155,10 @@ export default function ItineraryPageClient() {
       )
       setGoals(result.map(apiGoalToGoal))
       setDraftGoals([])
+      setGoalError(null)
     } catch {
       setGoals(snapshot)
+      setGoalError("Failed to save goals — please try again")
     } finally {
       setSavingGoals(false)
     }
@@ -174,8 +177,10 @@ export default function ItineraryPageClient() {
           })),
         )
         setGoals(result.map(apiGoalToGoal))
+        setGoalError(null)
       } catch {
         setGoals(snapshot)
+        setGoalError("Failed to save goals — please try again")
       }
     },
     [goals],
@@ -279,6 +284,9 @@ export default function ItineraryPageClient() {
           id="sidebar-panel"
           className={cn(!sidebarOpen && "hidden", "lg:block")}
         >
+          {goalError && (
+            <p className="text-sm text-red-600 mb-3">{goalError}</p>
+          )}
           {goals.length === 0 ? (
             <div className="space-y-4">
               <GoalSelector
