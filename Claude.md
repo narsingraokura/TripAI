@@ -65,6 +65,7 @@ TripAI/
 - [ ] Clerk auth
 - [ ] Supabase Realtime sync
 - [ ] Cost optimizer agent
+- [ ] mypy in venv + pre-commit hook (gap: type errors currently reach Reviewer)
 
 ## Database schema
 Five tables. Every table has id (uuid), created_at, updated_at.
@@ -170,6 +171,10 @@ command to run it from there. This avoids copy-paste indentation errors.
 - Foreign keys with ON DELETE CASCADE on all child tables
 - uuid primary keys everywhere — never sequential integers
 - created_at + updated_at on every table
+- `NEXT_PUBLIC_` env vars are baked into the browser JS bundle and visible to any visitor —
+  never use them for secrets, API keys, or credentials. Secrets that the browser must send
+  belong in a server-side proxy or behind auth (Clerk). A `NEXT_PUBLIC_ADMIN_API_KEY` on a
+  public Vercel deployment defeats any backend guard instantly.
 
 ## AI features (to be built)
 1. RAG Q&A — "What hotel am I at Jun 26?" answers from actual trip docs
@@ -230,6 +235,11 @@ Before every commit, verify:
 6. No direct Supabase calls from frontend code
 7. No UI stub committed with placeholder tests — ship the real implementation or leave untracked
 8. FastAPI `Header(None)`, `Query(None)`, `Body(None)` params typed `str | None`, not `str` — mypy catches this but code review should too
+9. Every `fetch` call in `lib/api.ts` that targets a guarded route (any route with
+   `Depends(require_admin_key)` in `main.py`) must send the matching auth header.
+   Trace each write function: `lib/api.ts` → route in `main.py` → check for `Depends`.
+   This was missed twice (LP-06a + LP-06b) and caught as a P1 by the Tester both times.
+10. No secrets in `NEXT_PUBLIC_` env vars — see Coding standards above.
 
 ## Current session state
 - Supabase: live, all 5 tables seeded (17 itinerary days, 14 bookings)
@@ -282,6 +292,10 @@ Backend:
 Frontend:
 - Jest + React Testing Library (unit)
 - Playwright (E2E)
+- `TextDecoder` is NOT available in Jest's jsdom environment. To test async generators
+  that use `TextDecoder` (e.g. SSE stream parsers), mock `fetch` to return `{ ok: false }`
+  so the generator throws before reaching `TextDecoder`. That still lets you assert the
+  request headers that were sent.
 
 AI/evals:
 - Braintrust or custom harness
