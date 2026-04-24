@@ -182,26 +182,26 @@ describe("Day cards", () => {
     expect(screen.getByText("Paris")).toBeInTheDocument()
   })
 
-  it("day cards start collapsed — edit button not visible", async () => {
+  it("day cards start collapsed — expanded content not visible", async () => {
     render(<ItineraryPageClient />)
     await screen.findByText("London")
-    expect(screen.queryAllByRole("button", { name: /edit/i })).toHaveLength(0)
+    expect(screen.queryAllByText(/no activities/i)).toHaveLength(0)
   })
 
-  it("clicking a card header expands it — shows Edit button", async () => {
+  it("clicking a card header expands it — shows expanded content", async () => {
     render(<ItineraryPageClient />)
     const day1Btn = await screen.findByRole("button", { name: /day 1/i })
     fireEvent.click(day1Btn)
-    expect(screen.getByRole("button", { name: /edit/i })).toBeInTheDocument()
+    expect(screen.getByText(/no activities/i)).toBeInTheDocument()
   })
 
-  it("clicking an expanded card collapses it — hides Edit button", async () => {
+  it("clicking an expanded card collapses it — hides expanded content", async () => {
     render(<ItineraryPageClient />)
     const day1Btn = await screen.findByRole("button", { name: /day 1/i })
     fireEvent.click(day1Btn)
-    expect(screen.getByRole("button", { name: /edit/i })).toBeInTheDocument()
+    expect(screen.getByText(/no activities/i)).toBeInTheDocument()
     fireEvent.click(day1Btn)
-    expect(screen.queryByRole("button", { name: /edit/i })).not.toBeInTheDocument()
+    expect(screen.queryByText(/no activities/i)).not.toBeInTheDocument()
   })
 
   it("only one card expanded at a time", async () => {
@@ -210,10 +210,10 @@ describe("Day cards", () => {
     const day2Btn = screen.getByRole("button", { name: /day 2/i })
 
     fireEvent.click(day1Btn)
-    expect(screen.getAllByRole("button", { name: /edit/i })).toHaveLength(1)
+    expect(screen.getAllByText(/no activities/i)).toHaveLength(1)
 
     fireEvent.click(day2Btn)
-    expect(screen.getAllByRole("button", { name: /edit/i })).toHaveLength(1)
+    expect(screen.getAllByText(/no activities/i)).toHaveLength(1)
   })
 })
 

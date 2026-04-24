@@ -129,4 +129,14 @@ describe("Interactions", () => {
     fireEvent.click(screen.getByRole("button", { name: /remove/i }))
     expect(onRemove).toHaveBeenCalledTimes(1)
   })
+
+  it("does not show Edit button when onEdit is undefined", () => {
+    render(<ItineraryDayCard {...defaultProps} isExpanded onEdit={undefined} />)
+    expect(screen.queryByRole("button", { name: /edit/i })).not.toBeInTheDocument()
+  })
+
+  it("does not show Remove button when onRemove is undefined", () => {
+    render(<ItineraryDayCard {...defaultProps} isExpanded onRemove={undefined} />)
+    expect(screen.queryByRole("button", { name: /remove/i })).not.toBeInTheDocument()
+  })
 })

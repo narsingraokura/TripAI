@@ -117,21 +117,27 @@ export default function ItineraryDayCard({
             </ul>
           )}
 
-          {/* Edit / Remove actions */}
-          <div className="px-4 py-2 border-t border-slate-100 flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={onEdit}>
-              Edit
-            </Button>
-            <div className="flex-1" />
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onRemove}
-              className="text-red-500 hover:text-red-700 hover:bg-red-50"
-            >
-              Remove
-            </Button>
-          </div>
+          {/* Edit / Remove actions — only rendered when handlers are provided */}
+          {(onEdit ?? onRemove) && (
+            <div className="px-4 py-2 border-t border-slate-100 flex items-center gap-2">
+              {onEdit && (
+                <Button variant="outline" size="sm" onClick={onEdit}>
+                  Edit
+                </Button>
+              )}
+              <div className="flex-1" />
+              {onRemove && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onRemove}
+                  className="text-red-500 hover:text-red-700 hover:bg-red-50"
+                >
+                  Remove
+                </Button>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
