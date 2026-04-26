@@ -268,8 +268,17 @@ def add_itinerary_day(
     # Shift affected days up by 1. Done as a single upsert to minimise round-trips.
     # Not truly atomic with the insert below; acceptable for a single-user app.
     # To make this transactional, define a Postgres RPC function.
+    #
+    # IMPORTANT: sort descending so PostgREST's INSERT … ON CONFLICT processes the
+    # highest position first.  Without this ordering the unique(trip_id, position)
+    # constraint fires mid-batch: row A is moved to position N+1 while row B still
+    # occupies N+1, causing a violation before B has a chance to shift.
     if affected.data:
-        shifted = [{**row, "position": row["position"] + 1} for row in affected.data]
+        shifted = sorted(
+            [{**row, "position": row["position"] + 1} for row in affected.data],
+            key=lambda r: r["position"],
+            reverse=True,
+        )
         supabase.table("itinerary_days").upsert(shifted).execute()
 
     # Insert the new day. Supply legacy Phase-1 columns so NOT NULL constraints pass.
@@ -322,9 +331,10 @@ def _build_itinerary_context(trip_id: str, supabase: Client) -> str:
     )
 
 
-def _build_advisor_prompt(context: str, mutation_description: str) -> str:
+def _build_advisor_prompt(context: str, mutation_type: str, mutation_description: str) -> str:
     return (
         f"{context}\n\n"
+        f"Change type: {mutation_type}\n"
         f"Proposed change: {mutation_description}\n\n"
         "Evaluate this change."
     )
@@ -341,7 +351,7 @@ def validate_itinerary_mutation(
     _get_trip_or_404(trip_id, supabase)
 
     context = _build_itinerary_context(trip_id, supabase)
-    user_message = _build_advisor_prompt(context, body.mutation_description)
+    user_message = _build_advisor_prompt(context, body.mutation_type, body.mutation_description)
 
     try:
         response = claude.messages.create(
