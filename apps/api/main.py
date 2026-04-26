@@ -50,16 +50,16 @@ def get_anthropic() -> anthropic.Anthropic:
 class Booking(BaseModel):
     id: str
     title: str
-    subtitle: str
+    subtitle: Optional[str] = None
     category: str
     urgency: str
     status: str
     estimated_cost: float
-    actual_cost: Optional[float]
-    deadline: str
-    discount_code: Optional[str]
-    card_tip: str
-    booked_at: Optional[str]
+    actual_cost: Optional[float] = None
+    deadline: Optional[str] = None
+    discount_code: Optional[str] = None
+    card_tip: Optional[str] = None
+    booked_at: Optional[str] = None
 
 
 class ItineraryDay(BaseModel):
@@ -111,8 +111,28 @@ class SuggestResponse(BaseModel):
     suggestions: list[Suggestion]
 
 
-class BookingStatusUpdate(BaseModel):
-    status: str
+class BookingUpdate(BaseModel):
+    status: Optional[Literal["booked", "pending"]] = None
+    actual_cost: Optional[float] = None
+    estimated_cost: Optional[float] = None
+    title: Optional[str] = None
+    subtitle: Optional[str] = None
+    deadline: Optional[str] = None
+    discount_code: Optional[str] = None
+    card_tip: Optional[str] = None
+
+
+class BookingCreate(BaseModel):
+    title: str
+    subtitle: Optional[str] = None
+    category: Literal["flights", "hotels", "trains", "activities", "food", "misc"]
+    urgency: Literal["fire", "now", "soon", "later"]
+    status: Literal["booked", "pending"] = "pending"
+    estimated_cost: float
+    actual_cost: Optional[float] = None
+    deadline: Optional[str] = None
+    discount_code: Optional[str] = None
+    card_tip: Optional[str] = None
 
 
 class BookingSummary(BaseModel):
@@ -203,7 +223,7 @@ def get_bookings(trip_id: str, supabase: Client = Depends(get_supabase)) -> Book
 def patch_booking(
     trip_id: str,
     booking_id: str,
-    update: BookingStatusUpdate,
+    update: BookingUpdate,
     supabase: Client = Depends(get_supabase),
     _auth: None = Depends(require_admin_key),
 ) -> Booking:
@@ -221,14 +241,56 @@ def patch_booking(
     if not booking_result.data:
         raise HTTPException(status_code=404, detail=f"Booking {booking_id} not found")
 
+    update_data = {k: v for k, v in update.model_dump().items() if v is not None}
     update_result = (
         supabase.table("bookings")
-        .update({"status": update.status})
+        .update(update_data)
         .eq("id", booking_id)
         .eq("trip_id", trip_id)
         .execute()
     )
     return Booking(**update_result.data[0])
+
+
+@app.post("/trips/{trip_id}/bookings", response_model=Booking, status_code=201)
+def create_booking(
+    trip_id: str,
+    body: BookingCreate,
+    supabase: Client = Depends(get_supabase),
+    _auth: None = Depends(require_admin_key),
+) -> Booking:
+    trip_result = supabase.table("trips").select("id").eq("id", trip_id).execute()
+    if not trip_result.data:
+        raise HTTPException(status_code=404, detail=f"Trip {trip_id} not found")
+
+    insert_data = {"trip_id": trip_id, **body.model_dump(exclude_none=True)}
+    result = supabase.table("bookings").insert(insert_data).execute()
+    return Booking(**result.data[0])
+
+
+@app.delete("/trips/{trip_id}/bookings/{booking_id}")
+def delete_booking(
+    trip_id: str,
+    booking_id: str,
+    supabase: Client = Depends(get_supabase),
+    _auth: None = Depends(require_admin_key),
+) -> Response:
+    trip_result = supabase.table("trips").select("id").eq("id", trip_id).execute()
+    if not trip_result.data:
+        raise HTTPException(status_code=404, detail=f"Trip {trip_id} not found")
+
+    booking_result = (
+        supabase.table("bookings")
+        .select("*")
+        .eq("id", booking_id)
+        .eq("trip_id", trip_id)
+        .execute()
+    )
+    if not booking_result.data:
+        raise HTTPException(status_code=404, detail=f"Booking {booking_id} not found")
+
+    supabase.table("bookings").delete().eq("id", booking_id).eq("trip_id", trip_id).execute()
+    return Response(status_code=204)
 
 
 @app.get("/trips/{trip_id}/itinerary", response_model=ItineraryResponse)
