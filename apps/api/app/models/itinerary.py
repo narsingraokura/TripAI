@@ -109,6 +109,11 @@ class Itinerary(BaseModel):
     constraints: list[Constraint]
 
 
+class ValidateRequest(BaseModel):
+    mutation_type: str
+    mutation_description: str
+
+
 class ValidationResult(BaseModel):
     status: Literal["ok", "warning", "violation"]
     message: str

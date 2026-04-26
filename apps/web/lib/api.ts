@@ -255,6 +255,19 @@ export type ApiActivity = {
 
 export type ApiDayType = "exploration" | "rest" | "transit"
 
+export type ApiDayCreate = {
+  position: number
+  date: string
+  city: string
+  day_type: ApiDayType
+  notes?: string
+}
+
+export type ApiValidationResult = {
+  status: "ok" | "warning" | "violation"
+  message: string
+}
+
 export type ApiDay = {
   id: string
   trip_id: string
@@ -312,6 +325,32 @@ export async function deleteTripConstraint(constraintId: string): Promise<void> 
     { method: "DELETE", headers: { "X-API-Key": getAdminApiKey() } },
   )
   if (!res.ok) throw new Error(`API error: ${res.status}`)
+}
+
+export async function addItineraryDay(data: ApiDayCreate): Promise<ApiDay> {
+  const res = await fetch(`${getApiBase()}/api/trips/${getTripId()}/itinerary/days`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-API-Key": getAdminApiKey() },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  return res.json() as Promise<ApiDay>
+}
+
+export async function validateItineraryMutation(body: {
+  mutation_type: string
+  mutation_description: string
+}): Promise<ApiValidationResult> {
+  const res = await fetch(
+    `${getApiBase()}/api/trips/${getTripId()}/itinerary/validate`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-API-Key": getAdminApiKey() },
+      body: JSON.stringify(body),
+    },
+  )
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  return res.json() as Promise<ApiValidationResult>
 }
 
 type SuggestApiResponse = {

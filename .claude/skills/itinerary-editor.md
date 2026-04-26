@@ -266,6 +266,176 @@ rendering any write-action UI.
 ## Tests to look at for patterns
 
 - `apps/api/tests/test_itinerary.py` — 38 backend tests covering CRUD + suggestions
+- `apps/api/tests/test_add_day.py` — 11 backend tests for add-day and validate routes
 - `apps/web/__tests__/DayCard.test.tsx` — component unit tests
 - `apps/web/__tests__/DayEditor.test.tsx` — form interaction tests
 - `apps/web/__tests__/CityGroup.test.tsx` — state delegation tests
+- `apps/web/__tests__/AddDayInlineForm.test.tsx` — inline form unit tests
+- `apps/web/__tests__/ItineraryPageClient.addDay.test.tsx` — add-day flow integration tests
+
+---
+
+## Phase 2 planner (ItineraryPageClient)
+
+The Phase 2 planner lives at `/itinerary/planner` and is distinct from the Phase 1
+`ItineraryView` at `/itinerary`. It uses a position-based data model.
+
+### Backend routes (in `apps/api/app/routers/itinerary.py`, prefix `/api`)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/trips/{trip_id}/itinerary` | none | Returns full itinerary (days + goals + constraints) |
+| POST | `/api/trips/{trip_id}/itinerary/days` | `X-API-Key` | Position-based insert with re-indexing (201) |
+| POST | `/api/trips/{trip_id}/itinerary/validate` | `X-API-Key` | Claude-powered mutation validation |
+| GET | `/api/trips/{trip_id}/goals` | none | Lists trip goals |
+| PUT | `/api/trips/{trip_id}/goals` | `X-API-Key` | Bulk replace goals (delete-then-insert) |
+| POST | `/api/trips/{trip_id}/goals` | `X-API-Key` | Create one goal |
+| DELETE | `/api/trips/{trip_id}/goals/{goal_id}` | `X-API-Key` | Delete one goal |
+| GET | `/api/trips/{trip_id}/constraints` | none | Lists trip constraints |
+| POST | `/api/trips/{trip_id}/constraints` | `X-API-Key` | Create one constraint |
+| DELETE | `/api/trips/{trip_id}/constraints/{constraint_id}` | `X-API-Key` | Delete one constraint |
+
+**Pydantic models (Phase 2):**
+
+```python
+class DayCreate(BaseModel):
+    position: int
+    date: str
+    city: str
+    day_type: str          # "exploration" | "rest" | "transit"
+    notes: str | None = None
+
+class ValidateRequest(BaseModel):
+    mutation_type: str
+    mutation_description: str
+
+class ValidationResult(BaseModel):
+    status: Literal["ok", "warning", "violation"]
+    message: str
+```
+
+**Position shifting logic** (`POST /api/trips/{trip_id}/itinerary/days`):
+1. Fetch all rows with `position >= body.position` (the "affected" rows)
+2. If any exist, build upsert payload with `position + 1` for each, sorted descending (to avoid unique-constraint violations mid-batch)
+3. Upsert the shifted rows
+4. Insert the new day at `body.position`
+
+### TypeScript types (Phase 2, in `apps/web/lib/api.ts`)
+
+```typescript
+export type ApiDayType = "exploration" | "rest" | "transit"
+
+export type ApiDayCreate = {
+  position: number
+  date: string
+  city: string
+  day_type: ApiDayType
+  notes?: string
+}
+
+export type ApiValidationResult = {
+  status: "ok" | "warning" | "violation"
+  message: string
+}
+
+export type ApiDay = {
+  id: string
+  trip_id: string
+  position: number
+  date: string | null
+  city: string | null
+  day_type: ApiDayType
+  notes: string | null
+  created_at: string
+  updated_at: string
+  activities: ApiActivity[]
+}
+
+export type ApiItinerary = {
+  days: ApiDay[]
+  goals: ApiGoal[]
+  constraints: ApiConstraint[]
+}
+```
+
+### API functions (Phase 2, in `apps/web/lib/api.ts`)
+
+```typescript
+// Returns full itinerary with days, goals, and constraints
+fetchItineraryFull(): Promise<ApiItinerary>
+
+// Position-based insert — guarded (sends X-API-Key)
+addItineraryDay(data: ApiDayCreate): Promise<ApiDay>
+
+// Claude-powered validation — guarded (sends X-API-Key)
+validateItineraryMutation(body: {
+  mutation_type: string
+  mutation_description: string
+}): Promise<ApiValidationResult>
+
+// Bulk-replace goals — guarded (sends X-API-Key)
+putTripGoals(goals: Array<{ goal_type: "preset" | "custom"; label: string }>): Promise<ApiGoal[]>
+
+// Add a constraint — guarded (sends X-API-Key)
+postTripConstraint(body: { constraint_type: ApiConstraintType; description: string; value?: number }): Promise<ApiConstraint>
+
+// Delete a constraint — guarded (sends X-API-Key)
+deleteTripConstraint(constraintId: string): Promise<void>
+```
+
+### Phase 2 component tree
+
+```
+apps/web/app/itinerary/planner/page.tsx  ← page; composes ItineraryPageClient
+apps/web/components/itinerary/
+  ItineraryPageClient.tsx                ← all state; renders day list + sidebar
+  AddDayInlineForm.tsx                   ← inline form (date/city/day_type) in slot
+  ItineraryDayCard.tsx                   ← Phase 2 day card (read-only + expand)
+  GoalChip.tsx                           ← removable goal badge
+  GoalSelector.tsx                       ← preset goal picker
+  GoalSuggestionCard.tsx                 ← validation result banner (ok/warning/violation)
+  ConstraintEditor.tsx                   ← add/remove constraint editor
+  ConstraintBadge.tsx                    ← constraint display badge
+```
+
+### ItineraryPageClient state
+
+```typescript
+// Page state
+days: Day[]
+goals: Goal[]
+draftGoals: Goal[]
+constraints: Constraint[]
+loading: boolean
+error: string | null
+expandedDayId: string | null
+sidebarOpen: boolean
+savingGoals: boolean
+goalError: string | null
+
+// Add-day state
+addingAtSlot: number | null   // slot S = before days[S]; null = no form open
+addSubmitting: boolean
+validation: ApiValidationResult | null
+```
+
+### Add-day slot model
+
+- N days → N+1 slots (slot 0 before days[0], slot N after days[N-1])
+- Slot S → `targetPosition = S + 1` (1-indexed backend position)
+- `calcInsertDate(slot)`: UTC date = `TRIP_START_DATE` ("2026-06-19") + `slot` days
+- Optimistic insert: placeholder `Day` at index `slot`; replaced on success, filtered on failure
+- Validation is async and non-blocking; sets `validation` state to show `GoalSuggestionCard`
+- All slot buttons and `AddDayInlineForm` are hidden when `isDemo` is true
+
+### AddDayInlineForm props
+
+```typescript
+type AddDayInlineFormProps = {
+  defaultDate: string       // pre-populated, editable
+  submitting: boolean
+  error: string | null
+  onAdd: (date: string, city: string, dayType: ApiDayType) => void
+  onCancel: () => void
+}
+```

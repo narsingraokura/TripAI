@@ -1,3 +1,4 @@
+export { default as AddDayInlineForm } from "./AddDayInlineForm"
 export { default as GoalChip } from "./GoalChip"
 export { default as ConstraintBadge } from "./ConstraintBadge"
 export { default as ItineraryDayCard } from "./ItineraryDayCard"
