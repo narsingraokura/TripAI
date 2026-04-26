@@ -1,5 +1,8 @@
 import {
   patchBookingStatus,
+  patchBooking,
+  createBooking,
+  deleteBooking,
   patchItineraryDay,
   createItineraryDay,
   deleteItineraryDay,
@@ -81,6 +84,24 @@ describe("X-API-Key header on guarded write functions", () => {
     await fetchSuggestions("2026-06-20")
     expect(capturedHeaders()["X-API-Key"]).toBe(ADMIN_KEY)
   })
+
+  it("patchBooking sends X-API-Key", async () => {
+    mockFetchOk({ id: "b1", status: "booked" })
+    await patchBooking("b1", { status: "booked" })
+    expect(capturedHeaders()["X-API-Key"]).toBe(ADMIN_KEY)
+  })
+
+  it("createBooking sends X-API-Key", async () => {
+    mockFetchOk({ id: "b-new", title: "Test Hotel" })
+    await createBooking({ title: "Test Hotel", category: "hotels", urgency: "now", estimated_cost: 500 })
+    expect(capturedHeaders()["X-API-Key"]).toBe(ADMIN_KEY)
+  })
+
+  it("deleteBooking sends X-API-Key", async () => {
+    ;(global.fetch as jest.Mock).mockResolvedValue({ ok: true, status: 204 })
+    await deleteBooking("b1")
+    expect(capturedHeaders()["X-API-Key"]).toBe(ADMIN_KEY)
+  })
 })
 
 // ── streamChat is intentionally open — no key ──────────────────────────────────
@@ -108,6 +129,63 @@ describe("getAdminApiKey throws when env var is missing", () => {
       "NEXT_PUBLIC_ADMIN_API_KEY is not set",
     )
     expect(global.fetch).not.toHaveBeenCalled()
+  })
+})
+
+// ── patchBooking, createBooking, deleteBooking ─────────────────────────────────
+
+describe("patchBooking", () => {
+  it("sends PATCH method", async () => {
+    mockFetchOk({ id: "b1", status: "booked" })
+    await patchBooking("b1", { status: "booked" })
+    const opts = (global.fetch as jest.Mock).mock.calls[0][1] as RequestInit
+    expect(opts.method).toBe("PATCH")
+  })
+
+  it("hits /trips/{tripId}/bookings/{bookingId}", async () => {
+    mockFetchOk({ id: "b1", status: "booked" })
+    await patchBooking("b1", { status: "booked" })
+    const url = (global.fetch as jest.Mock).mock.calls[0][0] as string
+    expect(url).toBe(`${API_BASE}/trips/${TRIP_ID}/bookings/b1`)
+  })
+
+  it("serialises patch body", async () => {
+    mockFetchOk({ id: "b1", actual_cost: 350 })
+    await patchBooking("b1", { actual_cost: 350 })
+    const opts = (global.fetch as jest.Mock).mock.calls[0][1] as RequestInit
+    expect(JSON.parse(opts.body as string)).toEqual({ actual_cost: 350 })
+  })
+})
+
+describe("createBooking", () => {
+  it("sends POST method", async () => {
+    mockFetchOk({ id: "b-new", title: "Test Hotel" })
+    await createBooking({ title: "Test Hotel", category: "hotels", urgency: "now", estimated_cost: 500 })
+    const opts = (global.fetch as jest.Mock).mock.calls[0][1] as RequestInit
+    expect(opts.method).toBe("POST")
+  })
+
+  it("hits /trips/{tripId}/bookings", async () => {
+    mockFetchOk({ id: "b-new", title: "Test Hotel" })
+    await createBooking({ title: "Test Hotel", category: "hotels", urgency: "now", estimated_cost: 500 })
+    const url = (global.fetch as jest.Mock).mock.calls[0][0] as string
+    expect(url).toBe(`${API_BASE}/trips/${TRIP_ID}/bookings`)
+  })
+})
+
+describe("deleteBooking", () => {
+  it("sends DELETE method", async () => {
+    ;(global.fetch as jest.Mock).mockResolvedValue({ ok: true, status: 204 })
+    await deleteBooking("b1")
+    const opts = (global.fetch as jest.Mock).mock.calls[0][1] as RequestInit
+    expect(opts.method).toBe("DELETE")
+  })
+
+  it("hits /trips/{tripId}/bookings/{bookingId}", async () => {
+    ;(global.fetch as jest.Mock).mockResolvedValue({ ok: true, status: 204 })
+    await deleteBooking("b1")
+    const url = (global.fetch as jest.Mock).mock.calls[0][0] as string
+    expect(url).toBe(`${API_BASE}/trips/${TRIP_ID}/bookings/b1`)
   })
 })
 
