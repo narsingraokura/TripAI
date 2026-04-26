@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import type {
   Activity,
   ActivityCategory,
@@ -162,6 +162,7 @@ export default function ItineraryPageClient() {
   // Remove-day state
   const [removingDayId, setRemovingDayId] = useState<string | null>(null)
   const [undoApiDay, setUndoApiDay] = useState<ApiDay | null>(null)
+  const removeSessionRef = useRef(0)
 
   const isDemo = useIsDemo()
 
@@ -259,6 +260,7 @@ export default function ItineraryPageClient() {
 
   const handleRemoveConfirm = useCallback(async () => {
     if (!removingDayId) return
+    const sessionId = ++removeSessionRef.current
 
     const apiDay = apiDays.find((d) => d.id === removingDayId)
     if (!apiDay) return
@@ -296,7 +298,9 @@ export default function ItineraryPageClient() {
         day_id: apiDay.id,
         day_activities: removedActivities,
       })
-      setValidation(result)
+      if (removeSessionRef.current === sessionId) {
+        setValidation(result)
+      }
     } catch {
       // Validation failure is non-blocking.
     }
@@ -304,7 +308,9 @@ export default function ItineraryPageClient() {
 
   const handleRemoveUndo = useCallback(async () => {
     if (!undoApiDay) return
+    ++removeSessionRef.current
     setUndoApiDay(null)
+    setValidation(null)
 
     const restored = apiDayToDay(undoApiDay)
     setDays((prev) =>
@@ -350,7 +356,7 @@ export default function ItineraryPageClient() {
         (s) => s.label === resolution.label,
       )
       await resolveItineraryMutation({
-        suggestion_id: suggestion?.suggestion_id ?? "unknown",
+        suggestion_id: suggestion?.suggestion_id ?? "",
         suggestion_payload: resolution.payload,
       })
       // Frontend re-validates after resolution
