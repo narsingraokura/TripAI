@@ -11,7 +11,7 @@
  * UndoToast is mocked here so we can control onExpire without real timers.
  * Internal timer behavior is tested in UndoToast.test.tsx.
  */
-import { render, screen, waitFor, within } from "@testing-library/react"
+import { act, render, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 
 const mockUseIsDemo = jest.fn(() => false)
@@ -250,6 +250,53 @@ it("when toast expires, undo is no longer available and addItineraryDay is not c
     expect(screen.queryByRole("button", { name: /undo/i })).not.toBeInTheDocument()
   })
   expect(mockAddDay).not.toHaveBeenCalled()
+})
+
+// ── Async race: undo before validation resolves ───────────────────────────────
+
+it("undo before validation resolves prevents GoalSuggestionCard from appearing", async () => {
+  let resolveValidation!: (val: unknown) => void
+  mockValidate.mockReturnValueOnce(
+    new Promise((res) => {
+      resolveValidation = res
+    }),
+  )
+  mockAddDay.mockResolvedValueOnce({
+    id: "day-paris",
+    trip_id: "trip-uuid",
+    position: 2,
+    date: "2026-06-23",
+    city: "Paris",
+    day_type: "exploration",
+    notes: null,
+    created_at: "2026-04-24T00:00:00Z",
+    updated_at: "2026-04-24T00:00:00Z",
+    activities: [],
+  })
+
+  await renderAndWait()
+  await confirmRemove("Paris")
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: /undo/i })).toBeInTheDocument(),
+  )
+
+  // Click Undo before validation resolves — invalidates the in-flight session.
+  await user.click(screen.getByRole("button", { name: /undo/i }))
+  await waitFor(() => expect(screen.getByText("Paris")).toBeInTheDocument())
+
+  // Resolve the stale validation inside act so React flushes any pending updates.
+  await act(async () => {
+    resolveValidation({
+      status: "violation",
+      message: "Must-visit constraint violated.",
+      suggestions: [],
+    })
+  })
+
+  // The session guard must block setValidation — GoalSuggestionCard must NOT appear.
+  expect(
+    screen.queryByText("Must-visit constraint violated."),
+  ).not.toBeInTheDocument()
 })
 
 // ── Post-remove validation ────────────────────────────────────────────────────
