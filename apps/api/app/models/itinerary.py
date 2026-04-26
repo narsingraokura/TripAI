@@ -112,8 +112,23 @@ class Itinerary(BaseModel):
 class ValidateRequest(BaseModel):
     mutation_type: str
     mutation_description: str
+    day_id: Optional[str] = None
+    day_activities: Optional[list[str]] = None
+
+
+class ResolveSuggestion(BaseModel):
+    suggestion_id: str
+    label: str
+    description: str
+    payload: dict
 
 
 class ValidationResult(BaseModel):
     status: Literal["ok", "warning", "violation"]
     message: str
+    suggestions: list[ResolveSuggestion] = []
+
+
+class ResolveRequest(BaseModel):
+    suggestion_id: str
+    suggestion_payload: dict

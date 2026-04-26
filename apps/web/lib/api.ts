@@ -263,9 +263,17 @@ export type ApiDayCreate = {
   notes?: string
 }
 
+export type ApiResolution = {
+  suggestion_id: string
+  label: string
+  description: string
+  payload: Record<string, unknown>
+}
+
 export type ApiValidationResult = {
   status: "ok" | "warning" | "violation"
   message: string
+  suggestions?: ApiResolution[]
 }
 
 export type ApiDay = {
@@ -337,9 +345,35 @@ export async function addItineraryDay(data: ApiDayCreate): Promise<ApiDay> {
   return res.json() as Promise<ApiDay>
 }
 
+export async function removeItineraryDay(dayId: string): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/api/trips/${getTripId()}/itinerary/days/${dayId}`,
+    { method: "DELETE", headers: { "X-API-Key": getAdminApiKey() } },
+  )
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+}
+
+export async function resolveItineraryMutation(body: {
+  suggestion_id: string
+  suggestion_payload: Record<string, unknown>
+}): Promise<ApiItinerary> {
+  const res = await fetch(
+    `${getApiBase()}/api/trips/${getTripId()}/itinerary/resolve`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-API-Key": getAdminApiKey() },
+      body: JSON.stringify(body),
+    },
+  )
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  return res.json() as Promise<ApiItinerary>
+}
+
 export async function validateItineraryMutation(body: {
   mutation_type: string
   mutation_description: string
+  day_id?: string
+  day_activities?: string[]
 }): Promise<ApiValidationResult> {
   const res = await fetch(
     `${getApiBase()}/api/trips/${getTripId()}/itinerary/validate`,
