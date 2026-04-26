@@ -18,6 +18,13 @@ Your job is to get code deployed safely and verify it works in production.
 - **Database:** Supabase Postgres (shared local + prod)
 - **Vector DB:** Qdrant Cloud
 - **AI:** OpenAI embeddings (`text-embedding-3-small`), Claude (`claude-sonnet-4-6`) for chat
+- **Railway URL:** https://tripai-production-9c64.up.railway.app
+  Use for /health checks and smoke tests.
+- **Vercel deployment protection:** Blocks automated fetch-based smoke tests.
+  DevOps must ask user to verify frontend manually or use gh CLI if authenticated.
+- **CI env vars:** GitHub Actions requires SUPABASE_URL and SUPABASE_KEY as
+  job-level env vars (dummy values fine — tests mock the client). If main.yml
+  is modified, verify these are still present.
 
 ## Autonomy Rules
 
@@ -45,6 +52,8 @@ NEVER DO THESE:
 
 ## Deployment Checklist (show this before asking for push approval)
 0. Run `git status` — Tester cannot commit. If untracked test files exist, commit them now with `test: <description>`
+0.5. Run `git diff HEAD --name-only` — if modified-but-unstaged files exist
+     from the Tester or previous roles, stage and commit them before proceeding.
 1. All tests green locally? (`pytest -v` + `npm test`)
 2. Commits being pushed? (`git log --oneline origin/main..HEAD`)
 3. New `NEXT_PUBLIC_*` vars needed? If yes, block push until confirmed set in Vercel

@@ -171,6 +171,41 @@ await waitFor(() => {
   expect(screen.queryByText(/loading/i)).not.toBeInTheDocument()
 })
 ```
+## Anti-Patterns (learned from bugs)
+
+- **Deferred-delete:** Never defer an API delete to a timer. The call is lost
+  on component unmount/navigation. Use immediate-delete + create-on-undo instead.
+  Reference: CHORE-BOOKING-EDIT navigate-away bug.
+- **Supabase upsert for replace-all:** Supabase upsert inserts/updates but does
+  NOT delete rows absent from the input. For replace-all semantics, use
+  delete-all-then-insert. Reference: EDIT-01 goal reappearing after remove.
+- **Silent error handling:** Never swallow mutation failures. Every catch block
+  that rolls back state must ALSO set an error message the user can see.
+  Reference: EDIT-01 BUG-EDIT01-001.
+
+## Undo Pattern (canonical)
+
+The approved undo pattern for all delete operations:
+1. Call delete API immediately on confirm
+2. Remove item from UI optimistically
+3. Show UndoToast (purely cosmetic — no deferred API call)
+4. On undo click: call create API to re-insert the item
+5. On undo failure: show error message, item stays deleted
+6. On toast expiry: clear undo state (no API call needed)
+
+## Frontend Test Patterns
+
+- **UndoToast mock:** Mock UndoToast with a data-testid="expire-btn" to
+  trigger onExpire without real timers. This is the standard pattern used
+  in 3+ test files.
+- **Async race testing:** Use a deferred promise + act() flush to test
+  interleaved timing (e.g., undo before validation resolves). Without act(),
+  React doesn't flush the stale setState and the test gives false green.
+- **Cost button disambiguation:** Use getAllByRole("button", { name: /^\$/ })
+  then filter by text content — avoids ambiguity with stat-card <p> elements.
+- **Formula assertions:** Always assert numerical results as formulas:
+  assert remaining == BUDGET_CAP - locked_in (not assert remaining == 24620).
+  Include a negative assertion confirming the wrong formula fails.
 
 Running tests:
 ```bash

@@ -295,6 +295,22 @@ The Phase 2 planner lives at `/itinerary/planner` and is distinct from the Phase
 | POST | `/api/trips/{trip_id}/constraints` | `X-API-Key` | Create one constraint |
 | DELETE | `/api/trips/{trip_id}/constraints/{constraint_id}` | `X-API-Key` | Delete one constraint |
 
+
+## Known Tech Debt
+
+- BUDGET_CAP = 25_000 is hardcoded in both apps/api/main.py and
+  apps/web/components/TripView.tsx. The trips.budget_cap DB column exists
+  but is not read. Fix when multi-trip support lands.
+- Booking.category is typed as `string` in lib/api.ts while urgency and
+  status use union types. Reconstructing a BookingCreate from a Booking
+  (as in undo handler) requires a cast on category only. Narrow the type
+  when touching booking types next.
+- undoError in TripView.tsx is never cleared after being set. Add
+  setUndoError(null) at the start of handleDelete.
+- handleUndoDelete has an unhandled race: if undo fires before deleteBooking
+  resolves, createBooking and deleteBooking are both in-flight briefly.
+  Narrow window, low risk, but track it.
+
 **Pydantic models (Phase 2):**
 
 ```python

@@ -20,6 +20,16 @@ You are the Developer agent for the TripAI project.
 - No business logic in `page.tsx` — pages only compose components
 - Every new DB query must filter by `trip_id`
 - Guarded routes use `Depends(require_admin_key)` — every `fetch` call targeting one must send `X-API-Key`
+- Never use deferred-delete (API call on timer expiry). Use immediate-delete
+  with create-on-undo. Deferred deletes are lost on component unmount/navigation.
+- When a test file contains assertions marked "# bug: should be 422",
+  treat updating that assertion as the first TDD step — confirm it fails
+  before touching the implementation.
+- Always run `git diff HEAD --name-only` before staging to catch
+  modified-but-unstaged files from previous roles.
+- For any optimistic mutation with a non-blocking follow-up (validation,
+  logging), use a useRef session counter to invalidate stale setState
+  calls if the mutation is undone before the follow-up resolves.
 
 ## Autonomy Rules
 

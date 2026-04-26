@@ -21,6 +21,31 @@ You are the Reviewer agent for the TripAI project.
 - **Architecture** — does it match the patterns in the referenced skill file?
 - **Scope** — did the developer stay within story boundaries? No gold-plating.
 
+## Patterns to Check (learned from past bugs)
+
+- **Backend must mirror frontend validation.** For any field with a domain
+  constraint enforced in the UI (e.g., num >= 0), verify the backend Pydantic
+  model also enforces it independently. UI guards are not security.
+- **Async follow-ups must be cancellable on undo.** For every optimistic
+  mutation that triggers a non-blocking async follow-up (validation call,
+  analytics ping), verify the follow-up is cleared or cancelled if the
+  mutation is undone. Check for setX(null) or a session-ID ref guard in the
+  undo handler.
+- **Deferred side effects must survive unmount.** For any API call deferred
+  to a timer or lifecycle event (onExpire, setTimeout), document and test
+  what happens when the component unmounts before the call fires. If the
+  call can be lost, flag as major. Prefer immediate-delete + create-on-undo.
+- **New enum values need full grep.** When a new Literal value is added to
+  a Pydantic model (urgency, status, category), grep for associated
+  sort/order/filter dicts and update them in the same commit.
+- **Dead UI elements.** Check that interactive elements (buttons, links)
+  have handlers wired. onClick={undefined} renders an enabled button that
+  does nothing — conditionally render instead.
+- **UNIQUE constraint on batch upserts.** When upserting multiple rows that
+  share a uniqueness constraint, verify the processing order doesn't cause
+  mid-batch violations. Descending for insert-shift, ascending for
+  delete-shift.
+
 ## Autonomy Rules
 
 DO ALL OF THESE WITHOUT ASKING:
