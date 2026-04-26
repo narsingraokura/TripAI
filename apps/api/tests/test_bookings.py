@@ -145,24 +145,28 @@ def test_summary_has_required_fields():
 
 
 def test_summary_total_estimated():
-    # 4800 + 400 + 1200 = 6400
     client = _client_with_mock()
     summary = client.get(f"/trips/{TRIP_ID}/bookings").json()["summary"]
-    assert summary["total_estimated"] == 6400.00
+    expected = sum(b["estimated_cost"] for b in MOCK_BOOKINGS_UNSORTED)
+    assert summary["total_estimated"] == pytest.approx(expected)
 
 
 def test_summary_total_actual():
-    # Only uuid-2 has actual_cost: 380.00
     client = _client_with_mock()
     summary = client.get(f"/trips/{TRIP_ID}/bookings").json()["summary"]
-    assert summary["total_actual"] == 380.00
+    expected = sum(b["actual_cost"] for b in MOCK_BOOKINGS_UNSORTED if b["actual_cost"] is not None)
+    assert summary["total_actual"] == pytest.approx(expected)
 
 
 def test_summary_locked_in():
-    # uuid-2 is booked: actual_cost=380.00
     client = _client_with_mock()
     summary = client.get(f"/trips/{TRIP_ID}/bookings").json()["summary"]
-    assert summary["locked_in"] == 380.00
+    expected = sum(
+        (b["actual_cost"] if b["actual_cost"] is not None else b["estimated_cost"])
+        for b in MOCK_BOOKINGS_UNSORTED
+        if b["status"] == "booked"
+    )
+    assert summary["locked_in"] == pytest.approx(expected)
 
 
 def test_summary_remaining_uses_budget_cap_formula():
