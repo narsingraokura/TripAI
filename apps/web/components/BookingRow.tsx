@@ -38,7 +38,7 @@ export default function BookingRow({ booking, onToggle, onPatch, onDelete }: Boo
   function handleCostSave() {
     setEditingCost(false)
     const num = parseFloat(costDraft)
-    if (!isNaN(num)) {
+    if (!isNaN(num) && num >= 0) {
       onPatch(booking.id, { actual_cost: num })
     }
   }
