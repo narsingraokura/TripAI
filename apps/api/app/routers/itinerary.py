@@ -1,5 +1,8 @@
+import json
 import os
+import re
 
+import anthropic
 from fastapi import APIRouter, Depends, HTTPException, Response
 from supabase import Client, create_client
 
@@ -8,10 +11,13 @@ from app.models.itinerary import (
     Constraint,
     ConstraintCreate,
     Day,
+    DayCreate,
     Goal,
     GoalCreate,
     GoalListUpdate,
     Itinerary,
+    ValidateRequest,
+    ValidationResult,
 )
 from auth import require_admin_key
 
@@ -22,6 +28,27 @@ def get_supabase() -> Client:
     url = os.getenv("SUPABASE_URL", "")
     key = os.getenv("SUPABASE_KEY", "")
     return create_client(url, key)
+
+
+def get_anthropic() -> anthropic.Anthropic:
+    return anthropic.Anthropic()
+
+
+VALIDATE_SYSTEM_PROMPT = """\
+You are a trip planning advisor for the Kura family Europe 2026 trip.
+
+Given the current itinerary state and a proposed change, evaluate whether the change \
+aligns with or violates the trip's goals and constraints.
+
+Rules:
+- If no goals or constraints are set, respond with status "ok"
+- "ok": change fits or is neutral
+- "warning": minor concern — proceed with awareness
+- "violation": directly conflicts with a stated goal or constraint
+
+Respond ONLY with a JSON object — no prose, no markdown fences:
+{"status": "ok" | "warning" | "violation", "message": "<one sentence, max 120 chars>"}
+"""
 
 
 def _get_trip_or_404(trip_id: str, supabase: Client) -> None:
@@ -216,3 +243,127 @@ def get_itinerary(
         goals=[Goal(**g) for g in goals_result.data],
         constraints=[Constraint(**c) for c in constraints_result.data],
     )
+
+
+# ── Add day (position-based insert with re-indexing) ──────────────────────────
+
+@router.post("/trips/{trip_id}/itinerary/days", response_model=Day, status_code=201)
+def add_itinerary_day(
+    trip_id: str,
+    body: DayCreate,
+    supabase: Client = Depends(get_supabase),
+    _auth: None = Depends(require_admin_key),
+) -> Day:
+    _get_trip_or_404(trip_id, supabase)
+
+    # Fetch all days that must shift up (position >= insertion point).
+    affected = (
+        supabase.table("itinerary_days")
+        .select("*")
+        .eq("trip_id", trip_id)
+        .gte("position", body.position)
+        .execute()
+    )
+
+    # Shift affected days up by 1. Done as a single upsert to minimise round-trips.
+    # Not truly atomic with the insert below; acceptable for a single-user app.
+    # To make this transactional, define a Postgres RPC function.
+    if affected.data:
+        shifted = [{**row, "position": row["position"] + 1} for row in affected.data]
+        supabase.table("itinerary_days").upsert(shifted).execute()
+
+    # Insert the new day. Supply legacy Phase-1 columns so NOT NULL constraints pass.
+    row: dict = {
+        "trip_id": trip_id,
+        "position": body.position,
+        "date": body.date,
+        "city": body.city,
+        "country": "",
+        "title": body.city or "New day",
+        "plan": body.notes or "",
+        "intensity": "light",
+        "is_special": False,
+        "day_type": body.day_type,
+        "notes": body.notes,
+    }
+    result = supabase.table("itinerary_days").insert(row).execute()
+    return Day(**{**result.data[0], "activities": []})
+
+
+# ── Validate mutation against trip goals / constraints ────────────────────────
+
+def _build_itinerary_context(trip_id: str, supabase: Client) -> str:
+    days_raw = (
+        supabase.table("itinerary_days").select("*").eq("trip_id", trip_id).execute().data
+    )
+    goals_raw = (
+        supabase.table("trip_goals").select("*").eq("trip_id", trip_id).execute().data
+    )
+    constraints_raw = (
+        supabase.table("trip_constraints").select("*").eq("trip_id", trip_id).execute().data
+    )
+
+    days_sorted = sorted(days_raw, key=lambda d: d.get("position", 0))
+    days_text = "\n".join(
+        f"  Day {d.get('position', '?')}: {d.get('date', '?')} — {d.get('city', 'Unknown')}"
+        for d in days_sorted
+    ) or "  (none)"
+
+    goals_text = ", ".join(g["label"] for g in goals_raw) or "None set"
+    constraints_text = "\n".join(
+        f"  - {c['constraint_type']}: {c['description']}"
+        for c in constraints_raw
+    ) or "  None set"
+
+    return (
+        f"Current itinerary ({len(days_raw)} days):\n{days_text}\n\n"
+        f"Trip goals: {goals_text}\n\n"
+        f"Trip constraints:\n{constraints_text}"
+    )
+
+
+def _build_advisor_prompt(context: str, mutation_description: str) -> str:
+    return (
+        f"{context}\n\n"
+        f"Proposed change: {mutation_description}\n\n"
+        "Evaluate this change."
+    )
+
+
+@router.post("/trips/{trip_id}/itinerary/validate", response_model=ValidationResult)
+def validate_itinerary_mutation(
+    trip_id: str,
+    body: ValidateRequest,
+    supabase: Client = Depends(get_supabase),
+    claude: anthropic.Anthropic = Depends(get_anthropic),
+    _auth: None = Depends(require_admin_key),
+) -> ValidationResult:
+    _get_trip_or_404(trip_id, supabase)
+
+    context = _build_itinerary_context(trip_id, supabase)
+    user_message = _build_advisor_prompt(context, body.mutation_description)
+
+    try:
+        response = claude.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=256,
+            system=VALIDATE_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_message}],
+        )
+    except anthropic.APIStatusError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    raw_text = response.content[0].text.strip()
+    if raw_text.startswith("```"):
+        raw_text = re.sub(r"^```(?:json)?\s*\n?", "", raw_text)
+        raw_text = re.sub(r"\n?```\s*$", "", raw_text).strip()
+
+    try:
+        data = json.loads(raw_text)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=502, detail="AI returned malformed JSON.")
+
+    try:
+        return ValidationResult(**data)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"AI response failed validation: {exc}") from exc
