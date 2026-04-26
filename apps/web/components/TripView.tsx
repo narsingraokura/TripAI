@@ -5,6 +5,7 @@ import { Progress } from "@/components/ui/progress"
 import { fetchBookings, patchBooking, createBooking, deleteBooking } from "@/lib/api"
 import type {
   Booking,
+  BookingCategory,
   BookingSummary,
   BookingStatus,
   BookingUpdate,
@@ -49,6 +50,7 @@ export default function TripView() {
   const [bookings, setBookings] = useState<Booking[]>([])
   const [summary, setSummary] = useState<BookingSummary | null>(null)
   const [undoBooking, setUndoBooking] = useState<Booking | null>(null)
+  const [undoError, setUndoError] = useState<string | null>(null)
   const [showAddForm, setShowAddForm] = useState(false)
   const [addSubmitting, setAddSubmitting] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
@@ -107,37 +109,52 @@ export default function TripView() {
   )
 
   const handleDelete = useCallback(
-    (id: string) => {
+    async (id: string) => {
       const booking = bookings.find((b) => b.id === id)
       if (!booking) return
       const updated = bookings.filter((b) => b.id !== id)
       setBookings(updated)
       setSummary(computeSummary(updated))
       setUndoBooking(booking)
+      try {
+        await deleteBooking(id)
+      } catch {
+        setBookings(bookings)
+        setSummary(computeSummary(bookings))
+        setUndoBooking(null)
+      }
     },
     [bookings],
   )
 
-  const handleUndoDelete = useCallback(() => {
+  const handleUndoDelete = useCallback(async () => {
     if (!undoBooking) return
-    const restored = sortByUrgency([...bookings, undoBooking])
-    setBookings(restored)
-    setSummary(computeSummary(restored))
-    setUndoBooking(null)
-  }, [bookings, undoBooking])
-
-  const handleExpireDelete = useCallback(async () => {
-    if (!undoBooking) return
-    const bookingToDelete = undoBooking
+    const bookingToRestore = undoBooking
     setUndoBooking(null)
     try {
-      await deleteBooking(bookingToDelete.id)
-    } catch {
-      const restored = sortByUrgency([...bookings, bookingToDelete])
+      const recreated = await createBooking({
+        title: bookingToRestore.title,
+        subtitle: bookingToRestore.subtitle,
+        category: bookingToRestore.category as BookingCategory,
+        urgency: bookingToRestore.urgency,
+        status: bookingToRestore.status,
+        estimated_cost: bookingToRestore.estimated_cost,
+        actual_cost: bookingToRestore.actual_cost,
+        deadline: bookingToRestore.deadline,
+        discount_code: bookingToRestore.discount_code,
+        card_tip: bookingToRestore.card_tip,
+      })
+      const restored = sortByUrgency([...bookings, recreated])
       setBookings(restored)
       setSummary(computeSummary(restored))
+    } catch {
+      setUndoError("Could not undo. The booking was permanently deleted.")
     }
   }, [bookings, undoBooking])
+
+  const handleExpireDelete = useCallback(() => {
+    setUndoBooking(null)
+  }, [])
 
   const handleAddBooking = useCallback(
     async (data: BookingCreate) => {
@@ -305,9 +322,14 @@ export default function TripView() {
       {undoBooking && (
         <UndoToast
           message={`"${undoBooking.title}" removed.`}
-          onUndo={handleUndoDelete}
-          onExpire={() => void handleExpireDelete()}
+          onUndo={() => void handleUndoDelete()}
+          onExpire={handleExpireDelete}
         />
+      )}
+      {undoError && (
+        <div className="fixed bottom-4 right-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 shadow-lg">
+          {undoError}
+        </div>
       )}
     </>
   )
