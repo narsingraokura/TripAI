@@ -10,21 +10,47 @@ import type {
   DayType,
   Goal,
 } from "@/types/itinerary"
-import type { ApiConstraint, ApiConstraintType, ApiDay, ApiGoal } from "@/lib/api"
+import type {
+  ApiConstraint,
+  ApiConstraintType,
+  ApiDay,
+  ApiDayType,
+  ApiGoal,
+  ApiValidationResult,
+} from "@/lib/api"
 import {
+  addItineraryDay,
   deleteTripConstraint,
   fetchItineraryFull,
   postTripConstraint,
   putTripGoals,
+  validateItineraryMutation,
 } from "@/lib/api"
 import {
+  AddDayInlineForm,
   ConstraintEditor,
   GoalChip,
   GoalSelector,
+  GoalSuggestionCard,
   ItineraryDayCard,
 } from "@/components/itinerary"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { useIsDemo } from "@/components/DemoModeProvider"
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+// Position 1 in the DB corresponds to this calendar date.
+// Slot S → new position S+1 → date = TRIP_START + S days.
+const TRIP_START_DATE = "2026-06-19"
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function calcInsertDate(slot: number): string {
+  const base = new Date(`${TRIP_START_DATE}T00:00:00Z`)
+  base.setUTCDate(base.getUTCDate() + slot)
+  return base.toISOString().slice(0, 10)
+}
 
 // ── Type mappers ──────────────────────────────────────────────────────────────
 
@@ -118,6 +144,13 @@ export default function ItineraryPageClient() {
   const [savingGoals, setSavingGoals] = useState(false)
   const [goalError, setGoalError] = useState<string | null>(null)
 
+  // Add-day state
+  const [addingAtSlot, setAddingAtSlot] = useState<number | null>(null)
+  const [addSubmitting, setAddSubmitting] = useState(false)
+  const [validation, setValidation] = useState<ApiValidationResult | null>(null)
+
+  const isDemo = useIsDemo()
+
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -140,6 +173,63 @@ export default function ItineraryPageClient() {
   const handleToggleExpand = useCallback((id: string) => {
     setExpandedDayId((prev) => (prev === id ? null : id))
   }, [])
+
+  const handleAddDay = useCallback(
+    async (slot: number, date: string, city: string, dayType: ApiDayType) => {
+      const targetPosition = slot + 1
+      const optimisticId = `optimistic-${Date.now()}`
+      const optimistic: Day = {
+        id: optimisticId,
+        date,
+        city,
+        country: "",
+        dayType: apiDayTypeToDayType(dayType),
+        activities: [],
+      }
+
+      // Optimistic insert at index = slot (before slot's existing day).
+      setDays((prev) => [
+        ...prev.slice(0, slot),
+        optimistic,
+        ...prev.slice(slot),
+      ])
+      setAddingAtSlot(null)
+      setAddSubmitting(true)
+
+      let succeeded = false
+      try {
+        const result = await addItineraryDay({
+          position: targetPosition,
+          date,
+          city,
+          day_type: dayType,
+        })
+        setDays((prev) =>
+          prev.map((d) => (d.id === optimisticId ? apiDayToDay(result) : d)),
+        )
+        succeeded = true
+      } catch {
+        // Silent rollback — degrade gracefully without leaking error state.
+        setDays((prev) => prev.filter((d) => d.id !== optimisticId))
+      } finally {
+        setAddSubmitting(false)
+      }
+
+      if (!succeeded) return
+
+      // Async validation — does not block the UI.
+      try {
+        const result = await validateItineraryMutation({
+          mutation_type: "add_day",
+          mutation_description: `Adding a ${dayType} day in ${city} on ${date}`,
+        })
+        setValidation(result)
+      } catch {
+        // Validation failure is non-blocking.
+      }
+    },
+    [],
+  )
 
   const handleSaveGoals = useCallback(async () => {
     if (draftGoals.length === 0) return
@@ -241,6 +331,36 @@ export default function ItineraryPageClient() {
     )
   }
 
+  // Renders the slot between / before / after day cards.
+  // Slot S sits before days[S] (0-indexed), and slot N sits after the last day.
+  function renderSlot(slot: number) {
+    if (isDemo) return null
+    if (addingAtSlot === slot) {
+      return (
+        <AddDayInlineForm
+          defaultDate={calcInsertDate(slot)}
+          submitting={addSubmitting}
+          error={null}
+          onAdd={(date, city, dayType) =>
+            void handleAddDay(slot, date, city, dayType)
+          }
+          onCancel={() => setAddingAtSlot(null)}
+        />
+      )
+    }
+    return (
+      <button
+        type="button"
+        aria-label="+ Add day"
+        onClick={() => setAddingAtSlot(slot)}
+        className="w-full flex items-center gap-1 px-4 py-1 text-xs text-slate-300 hover:text-blue-500 hover:bg-blue-50 rounded transition-colors"
+      >
+        <span aria-hidden="true">+</span>
+        <span aria-hidden="true">Add day</span>
+      </button>
+    )
+  }
+
   return (
     <div className="flex flex-col lg:flex-row gap-6">
       {/* ── Main: day list ──────────────────────────────────────────────── */}
@@ -251,16 +371,26 @@ export default function ItineraryPageClient() {
             <Button variant="outline">Start planning your trip</Button>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-0.5">
+            {renderSlot(0)}
             {days.map((day, i) => (
-              <ItineraryDayCard
-                key={day.id}
-                day={day}
-                dayNumber={i + 1}
-                isExpanded={expandedDayId === day.id}
-                onToggleExpand={() => handleToggleExpand(day.id)}
-              />
+              <div key={day.id}>
+                <ItineraryDayCard
+                  day={day}
+                  dayNumber={i + 1}
+                  isExpanded={expandedDayId === day.id}
+                  onToggleExpand={() => handleToggleExpand(day.id)}
+                />
+                {renderSlot(i + 1)}
+              </div>
             ))}
+            {validation && (
+              <GoalSuggestionCard
+                status={validation.status}
+                message={validation.message}
+                onDismiss={() => setValidation(null)}
+              />
+            )}
           </div>
         )}
       </div>
