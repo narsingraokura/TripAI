@@ -66,6 +66,7 @@ export interface ValidationResult {
 export interface Resolution {
   label: string
   description: string
+  payload?: Record<string, unknown>
 }
 
 export const PRESET_GOALS: readonly string[] = [
