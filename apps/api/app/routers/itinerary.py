@@ -474,11 +474,19 @@ def remove_itinerary_day(
     day_data = day_result.data[0]
     deleted_position: int = day_data["position"]
 
+    acts_result = (
+        supabase.table("itinerary_activities")
+        .select("*")
+        .eq("day_id", day_id)
+        .execute()
+    )
+    activities_data: list = acts_result.data or []
+
     supabase.table("itinerary_mutations").insert(
         {
             "trip_id": trip_id,
             "mutation_type": "remove_day",
-            "payload_before": day_data,
+            "payload_before": {**day_data, "activities": activities_data},
             "payload_after": None,
         }
     ).execute()
@@ -493,6 +501,8 @@ def remove_itinerary_day(
         .execute()
     )
     if higher.data:
+        # Sort ascending: remove-day shifts positions DOWN, so process lowest first
+        # to avoid transient UNIQUE constraint collisions. (Add-day sorts descending.)
         shifted = sorted(
             [{**row, "position": row["position"] - 1} for row in higher.data],
             key=lambda r: r["position"],
