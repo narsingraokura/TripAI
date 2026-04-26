@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from supabase import Client, create_client
 
 from app.routers.itinerary import router as itinerary_router
@@ -113,8 +113,8 @@ class SuggestResponse(BaseModel):
 
 class BookingUpdate(BaseModel):
     status: Optional[Literal["booked", "pending"]] = None
-    actual_cost: Optional[float] = None
-    estimated_cost: Optional[float] = None
+    actual_cost: Optional[float] = Field(None, ge=0)
+    estimated_cost: Optional[float] = Field(None, ge=0)
     title: Optional[str] = None
     subtitle: Optional[str] = None
     deadline: Optional[str] = None
@@ -128,8 +128,8 @@ class BookingCreate(BaseModel):
     category: Literal["flights", "hotels", "trains", "activities", "food", "misc"]
     urgency: Literal["fire", "now", "soon", "later"]
     status: Literal["booked", "pending"] = "pending"
-    estimated_cost: float
-    actual_cost: Optional[float] = None
+    estimated_cost: float = Field(..., ge=0)
+    actual_cost: Optional[float] = Field(None, ge=0)
     deadline: Optional[str] = None
     discount_code: Optional[str] = None
     card_tip: Optional[str] = None
