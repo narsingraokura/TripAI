@@ -85,6 +85,7 @@ def _build_delete_mock(
     trip_id: str,
     day_found: bool = True,
     higher_days: list | None = None,
+    activities: list | None = None,
 ) -> tuple[MagicMock, MagicMock, MagicMock]:
     """
     Returns (mock_sb, days_chain, mutations_chain).
@@ -98,6 +99,7 @@ def _build_delete_mock(
     """
     row = _day_row(trip_id)
     highs = higher_days or []
+    acts = activities or []
 
     trip_chain = MagicMock()
     trip_chain.select.return_value.eq.return_value.execute.return_value.data = [{"id": trip_id}]
@@ -115,10 +117,14 @@ def _build_delete_mock(
     mutations_chain = MagicMock()
     mutations_chain.insert.return_value.execute.return_value.data = [{"id": "mut-uuid"}]
 
+    acts_chain = MagicMock()
+    acts_chain.select.return_value.eq.return_value.execute.return_value.data = acts
+
     chains: dict[str, MagicMock] = {
         "trips": trip_chain,
         "itinerary_days": days_chain,
         "itinerary_mutations": mutations_chain,
+        "itinerary_activities": acts_chain,
     }
     mock_sb = MagicMock()
     mock_sb.table.side_effect = lambda name: chains.get(name, MagicMock())
@@ -197,8 +203,9 @@ def test_remove_day_no_upsert_when_last_day(trip_id: str) -> None:
 
 
 def test_remove_day_logs_mutation(trip_id: str) -> None:
-    """DELETE route inserts a row into itinerary_mutations with the deleted day as payload_before."""
-    mock_sb, _, mutations_chain = _build_delete_mock(trip_id)
+    """DELETE route logs payload_before with the day row and its activities embedded."""
+    acts = [_activity_row(DAY_ID)]
+    mock_sb, _, mutations_chain = _build_delete_mock(trip_id, activities=acts)
     _make_client(mock_sb).delete(
         f"/api/trips/{trip_id}/itinerary/days/{DAY_ID}",
         headers={"X-API-Key": API_KEY},
@@ -208,6 +215,7 @@ def test_remove_day_logs_mutation(trip_id: str) -> None:
     assert insert_arg["trip_id"] == trip_id
     assert insert_arg["mutation_type"] == "remove_day"
     assert insert_arg["payload_before"]["id"] == DAY_ID
+    assert insert_arg["payload_before"]["activities"] == acts
 
 
 # ── POST /api/trips/{trip_id}/itinerary/resolve ───────────────────────────────
@@ -427,3 +435,53 @@ def test_validate_no_suggestions_when_ok(trip_id: str) -> None:
     body = response.json()
     assert body["status"] == "ok"
     assert body.get("suggestions", []) == []
+
+
+# ── Resolve — 422 error paths ─────────────────────────────────────────────────
+
+def test_resolve_unknown_action_returns_422(trip_id: str) -> None:
+    """POST /resolve with an unrecognised action name returns 422."""
+    mock_sb = _build_resolve_mock(trip_id)
+    response = _make_client(mock_sb).post(
+        f"/api/trips/{trip_id}/itinerary/resolve",
+        json={
+            "suggestion_id": "s-1",
+            "suggestion_payload": {"action": "unknown_action"},
+        },
+        headers={"X-API-Key": API_KEY},
+    )
+    assert response.status_code == 422
+
+
+def test_resolve_missing_activity_id_returns_422(trip_id: str) -> None:
+    """POST /resolve with move_activity but no activity_id returns 422."""
+    mock_sb = _build_resolve_mock(trip_id)
+    response = _make_client(mock_sb).post(
+        f"/api/trips/{trip_id}/itinerary/resolve",
+        json={
+            "suggestion_id": "s-1",
+            "suggestion_payload": {
+                "action": "move_activity",
+                "to_day_id": OTHER_DAY_ID,
+            },
+        },
+        headers={"X-API-Key": API_KEY},
+    )
+    assert response.status_code == 422
+
+
+def test_resolve_missing_to_day_id_returns_422(trip_id: str) -> None:
+    """POST /resolve with move_activity but no to_day_id returns 422."""
+    mock_sb = _build_resolve_mock(trip_id)
+    response = _make_client(mock_sb).post(
+        f"/api/trips/{trip_id}/itinerary/resolve",
+        json={
+            "suggestion_id": "s-1",
+            "suggestion_payload": {
+                "action": "move_activity",
+                "activity_id": ACTIVITY_ID,
+            },
+        },
+        headers={"X-API-Key": API_KEY},
+    )
+    assert response.status_code == 422
