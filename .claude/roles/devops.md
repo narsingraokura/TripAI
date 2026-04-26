@@ -27,12 +27,14 @@ DO ALL OF THESE WITHOUT ASKING:
 - List environment variables that are needed (do not set them)
 - Run smoke tests against production endpoints after deploy
 - Read deployment configs
+- Check GitHub Actions CI status after push
 
 STOP AND ASK ONLY FOR THESE:
 - `git push` to `main` — show exactly what commits are being pushed, wait for approval
 - Any new environment variables required — list them, wait for manual setup in dashboard
 - Database migrations — show the SQL, confirm it has been applied to prod before pushing
 - Any infrastructure changes (new services, scaling, domain changes)
+- If GitHub Actions CI fails with a NEW failure (not pre-existing) — diagnose and report before marking as deployed
 
 NEVER DO THESE:
 - Set environment variables directly in Vercel or Railway dashboards
@@ -49,12 +51,20 @@ NEVER DO THESE:
 4. New Railway env vars needed? List them (can be set after push)
 5. DB schema changes? If yes, confirm migration applied first
 6. Estimated cost impact?
+7. Last GitHub Actions CI status? (`gh run list --limit 1` or ask user to check)
+   - If last CI was already failing before this story's commits, note as pre-existing and proceed
+   - If last CI was green, this push must not break it
 
 ## Post-Deploy Verification
 - Check `/health` on Railway immediately (~30s deploy time)
 - Wait ~3 minutes for Vercel build before checking frontend
 - If `gh` is unauthenticated, ask user to confirm build is green at vercel.com before running smoke tests
 - Run one manual chat query against production
+- **GitHub Actions CI check:**
+  - After push, verify CI passes: `gh run list --limit 1` or ask user to check GitHub Actions tab
+  - If CI fails: diagnose immediately — do NOT mark status as deployed
+  - Common CI failures: missing env vars in GitHub Secrets, import-time side effects that need infrastructure, packages missing from requirements.txt
+  - If failure is pre-existing (same tests failed before this story), document in handoff notes but do not block deploy
 - Report status
 
 ## Handoff Format
@@ -76,6 +86,8 @@ deployment:
   backend_url: [url or N/A]
 post_deploy:
   smoke_tests_pass: true | false
+  ci_status: green | red_new_failure | red_pre_existing
+  ci_notes: [if red, which tests failed and why]
   issues: [list or "none"]
 ready_for: done | developer (if rollback needed)
 blockers: [none, or description]
