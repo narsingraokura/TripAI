@@ -9,6 +9,7 @@ import type {
   Day,
   DayType,
   Goal,
+  Resolution,
 } from "@/types/itinerary"
 import type {
   ApiConstraint,
@@ -16,6 +17,7 @@ import type {
   ApiDay,
   ApiDayType,
   ApiGoal,
+  ApiResolution,
   ApiValidationResult,
 } from "@/lib/api"
 import {
@@ -24,6 +26,8 @@ import {
   fetchItineraryFull,
   postTripConstraint,
   putTripGoals,
+  removeItineraryDay,
+  resolveItineraryMutation,
   validateItineraryMutation,
 } from "@/lib/api"
 import {
@@ -33,15 +37,15 @@ import {
   GoalSelector,
   GoalSuggestionCard,
   ItineraryDayCard,
+  RemoveDayDialog,
 } from "@/components/itinerary"
+import UndoToast from "@/components/UndoToast"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { useIsDemo } from "@/components/DemoModeProvider"
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-// Position 1 in the DB corresponds to this calendar date.
-// Slot S → new position S+1 → date = TRIP_START + S days.
 const TRIP_START_DATE = "2026-06-19"
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -118,6 +122,10 @@ function apiConstraintToConstraint(c: ApiConstraint): Constraint {
   }
 }
 
+function apiResolutionToResolution(r: ApiResolution): Resolution {
+  return { label: r.label, description: r.description, payload: r.payload }
+}
+
 // ── Loading skeleton ──────────────────────────────────────────────────────────
 
 function LoadingSkeleton() {
@@ -134,9 +142,11 @@ function LoadingSkeleton() {
 
 export default function ItineraryPageClient() {
   const [days, setDays] = useState<Day[]>([])
+  const [apiDays, setApiDays] = useState<ApiDay[]>([])
   const [goals, setGoals] = useState<Goal[]>([])
   const [draftGoals, setDraftGoals] = useState<Goal[]>([])
   const [constraints, setConstraints] = useState<Constraint[]>([])
+  const [apiConstraints, setApiConstraints] = useState<ApiConstraint[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [expandedDayId, setExpandedDayId] = useState<string | null>(null)
@@ -149,6 +159,10 @@ export default function ItineraryPageClient() {
   const [addSubmitting, setAddSubmitting] = useState(false)
   const [validation, setValidation] = useState<ApiValidationResult | null>(null)
 
+  // Remove-day state
+  const [removingDayId, setRemovingDayId] = useState<string | null>(null)
+  const [undoApiDay, setUndoApiDay] = useState<ApiDay | null>(null)
+
   const isDemo = useIsDemo()
 
   const load = useCallback(async () => {
@@ -156,9 +170,11 @@ export default function ItineraryPageClient() {
     setError(null)
     try {
       const data = await fetchItineraryFull()
+      setApiDays(data.days)
       setDays(data.days.map(apiDayToDay))
       setGoals(data.goals.map(apiGoalToGoal))
       setConstraints(data.constraints.map(apiConstraintToConstraint))
+      setApiConstraints(data.constraints)
     } catch {
       setError("Could not load itinerary")
     } finally {
@@ -174,6 +190,8 @@ export default function ItineraryPageClient() {
     setExpandedDayId((prev) => (prev === id ? null : id))
   }, [])
 
+  // ── Add day ────────────────────────────────────────────────────────────────
+
   const handleAddDay = useCallback(
     async (slot: number, date: string, city: string, dayType: ApiDayType) => {
       const targetPosition = slot + 1
@@ -187,7 +205,6 @@ export default function ItineraryPageClient() {
         activities: [],
       }
 
-      // Optimistic insert at index = slot (before slot's existing day).
       setDays((prev) => [
         ...prev.slice(0, slot),
         optimistic,
@@ -204,20 +221,23 @@ export default function ItineraryPageClient() {
           city,
           day_type: dayType,
         })
+        setApiDays((prev) => {
+          const filtered = prev.filter((d) => d.id !== optimisticId)
+          return [...filtered, result].sort((a, b) => a.position - b.position)
+        })
         setDays((prev) =>
           prev.map((d) => (d.id === optimisticId ? apiDayToDay(result) : d)),
         )
         succeeded = true
       } catch {
-        // Silent rollback — degrade gracefully without leaking error state.
         setDays((prev) => prev.filter((d) => d.id !== optimisticId))
+        setApiDays((prev) => prev.filter((d) => d.id !== optimisticId))
       } finally {
         setAddSubmitting(false)
       }
 
       if (!succeeded) return
 
-      // Async validation — does not block the UI.
       try {
         const result = await validateItineraryMutation({
           mutation_type: "add_day",
@@ -230,6 +250,121 @@ export default function ItineraryPageClient() {
     },
     [],
   )
+
+  // ── Remove day ─────────────────────────────────────────────────────────────
+
+  const handleRemoveRequest = useCallback((dayId: string) => {
+    setRemovingDayId(dayId)
+  }, [])
+
+  const handleRemoveConfirm = useCallback(async () => {
+    if (!removingDayId) return
+
+    const apiDay = apiDays.find((d) => d.id === removingDayId)
+    if (!apiDay) return
+
+    // Optimistic remove
+    setDays((prev) => prev.filter((d) => d.id !== removingDayId))
+    setApiDays((prev) => prev.filter((d) => d.id !== removingDayId))
+    setUndoApiDay(apiDay)
+    setRemovingDayId(null)
+
+    const removedActivities = apiDay.activities.map((a) => a.title)
+
+    try {
+      await removeItineraryDay(apiDay.id)
+    } catch {
+      // Rollback on failure
+      setDays((prev) => {
+        const restored = apiDayToDay(apiDay)
+        return [...prev, restored].sort(
+          (a, b) => (apiDays.find((d) => d.id === a.id)?.position ?? 0) -
+                    (apiDays.find((d) => d.id === b.id)?.position ?? 0),
+        )
+      })
+      setApiDays((prev) =>
+        [...prev, apiDay].sort((a, b) => a.position - b.position),
+      )
+      setUndoApiDay(null)
+      return
+    }
+
+    try {
+      const result = await validateItineraryMutation({
+        mutation_type: "remove_day",
+        mutation_description: `Removing ${apiDay.city ?? "day"} from the itinerary`,
+        day_id: apiDay.id,
+        day_activities: removedActivities,
+      })
+      setValidation(result)
+    } catch {
+      // Validation failure is non-blocking.
+    }
+  }, [removingDayId, apiDays])
+
+  const handleRemoveUndo = useCallback(async () => {
+    if (!undoApiDay) return
+    setUndoApiDay(null)
+
+    const restored = apiDayToDay(undoApiDay)
+    setDays((prev) =>
+      [...prev, restored].sort((a, b) => {
+        const posA = apiDays.find((d) => d.id === a.id)?.position ?? undoApiDay.position
+        const posB = apiDays.find((d) => d.id === b.id)?.position ?? 0
+        return posA - posB
+      }),
+    )
+    setApiDays((prev) =>
+      [...prev, undoApiDay].sort((a, b) => a.position - b.position),
+    )
+
+    try {
+      const result = await addItineraryDay({
+        position: undoApiDay.position,
+        date: undoApiDay.date ?? "",
+        city: undoApiDay.city ?? "",
+        day_type: undoApiDay.day_type,
+        notes: undoApiDay.notes ?? undefined,
+      })
+      setApiDays((prev) =>
+        prev.map((d) => (d.id === undoApiDay.id ? result : d)),
+      )
+      setDays((prev) =>
+        prev.map((d) => (d.id === undoApiDay.id ? apiDayToDay(result) : d)),
+      )
+    } catch {
+      // Silent — the optimistic restore is already shown
+    }
+  }, [undoApiDay, apiDays])
+
+  const handleUndoExpire = useCallback(() => {
+    setUndoApiDay(null)
+  }, [])
+
+  // ── Resolve suggestion ─────────────────────────────────────────────────────
+
+  const handleApplyResolution = useCallback(async (resolution: Resolution) => {
+    if (!resolution.payload) return
+    try {
+      const suggestion = validation?.suggestions?.find(
+        (s) => s.label === resolution.label,
+      )
+      await resolveItineraryMutation({
+        suggestion_id: suggestion?.suggestion_id ?? "unknown",
+        suggestion_payload: resolution.payload,
+      })
+      // Frontend re-validates after resolution
+      const result = await validateItineraryMutation({
+        mutation_type: "post_resolve",
+        mutation_description: `Applied: ${resolution.label}`,
+      })
+      setValidation(result)
+    } catch {
+      // Non-blocking
+    }
+  }, [validation])
+
+  // ── Goals ──────────────────────────────────────────────────────────────────
 
   const handleSaveGoals = useCallback(async () => {
     if (draftGoals.length === 0) return
@@ -301,8 +436,6 @@ export default function ItineraryPageClient() {
       }
 
       for (const toRemove of removed) {
-        // Only DELETE constraints that already exist in the backend (UUIDs).
-        // Temp IDs created by ConstraintEditor start with "constraint-".
         if (!toRemove.id.startsWith("constraint-")) {
           try {
             await deleteTripConstraint(toRemove.id)
@@ -318,6 +451,29 @@ export default function ItineraryPageClient() {
     [constraints],
   )
 
+  // ── Must-visit constraint check ────────────────────────────────────────────
+
+  function getMustVisitActivity(day: Day): string | null {
+    const mustVisitDescriptions = new Set(
+      apiConstraints
+        .filter((c) => c.constraint_type === "must_visit")
+        .map((c) => c.description),
+    )
+    const matched = day.activities.find((a) => mustVisitDescriptions.has(a.name))
+    return matched?.name ?? null
+  }
+
+  // ── Render helpers ─────────────────────────────────────────────────────────
+
+  const removingDay = removingDayId
+    ? (days.find((d) => d.id === removingDayId) ?? null)
+    : null
+
+  const validationResolutions: Resolution[] | undefined =
+    validation?.suggestions && validation.suggestions.length > 0
+      ? validation.suggestions.map(apiResolutionToResolution)
+      : undefined
+
   if (loading) return <LoadingSkeleton />
 
   if (error) {
@@ -331,8 +487,6 @@ export default function ItineraryPageClient() {
     )
   }
 
-  // Renders the slot between / before / after day cards.
-  // Slot S sits before days[S] (0-indexed), and slot N sits after the last day.
   function renderSlot(slot: number) {
     if (isDemo) return null
     if (addingAtSlot === slot) {
@@ -362,101 +516,123 @@ export default function ItineraryPageClient() {
   }
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6">
-      {/* ── Main: day list ──────────────────────────────────────────────── */}
-      <div className="flex-1 min-w-0">
-        {days.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-slate-500 mb-4">No days planned yet.</p>
-            <Button variant="outline">Start planning your trip</Button>
-          </div>
-        ) : (
-          <div className="space-y-0.5">
-            {renderSlot(0)}
-            {days.map((day, i) => (
-              <div key={day.id}>
-                <ItineraryDayCard
-                  day={day}
-                  dayNumber={i + 1}
-                  isExpanded={expandedDayId === day.id}
-                  onToggleExpand={() => handleToggleExpand(day.id)}
-                />
-                {renderSlot(i + 1)}
-              </div>
-            ))}
-            {validation && (
-              <GoalSuggestionCard
-                status={validation.status}
-                message={validation.message}
-                onDismiss={() => setValidation(null)}
-              />
-            )}
-          </div>
-        )}
-      </div>
+    <>
+      {/* ── Confirmation dialog ──────────────────────────────────────────── */}
+      {removingDay && (
+        <RemoveDayDialog
+          day={removingDay}
+          mustVisitActivity={getMustVisitActivity(removingDay)}
+          onConfirm={() => void handleRemoveConfirm()}
+          onCancel={() => setRemovingDayId(null)}
+        />
+      )}
 
-      {/* ── Sidebar ─────────────────────────────────────────────────────── */}
-      <aside className="lg:w-72 shrink-0">
-        {/* Mobile collapse toggle */}
-        <button
-          type="button"
-          onClick={() => setSidebarOpen((prev) => !prev)}
-          aria-expanded={sidebarOpen}
-          aria-controls="sidebar-panel"
-          className="lg:hidden w-full flex items-center justify-between px-4 py-3 mb-3 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700"
-        >
-          Goals &amp; Constraints
-          <span aria-hidden="true">{sidebarOpen ? "▲" : "▼"}</span>
-        </button>
+      {/* ── Undo toast ───────────────────────────────────────────────────── */}
+      {undoApiDay && (
+        <UndoToast
+          message="Day removed."
+          onUndo={() => void handleRemoveUndo()}
+          onExpire={handleUndoExpire}
+        />
+      )}
 
-        {/* Sidebar content — hidden on mobile when collapsed, always visible on desktop */}
-        <div
-          id="sidebar-panel"
-          className={cn(!sidebarOpen && "hidden", "lg:block")}
-        >
-          {goalError && (
-            <p className="text-sm text-red-600 mb-3">{goalError}</p>
-          )}
-          {goals.length === 0 ? (
-            <div className="space-y-4">
-              <GoalSelector
-                selectedGoals={draftGoals}
-                onGoalsChange={setDraftGoals}
-              />
-              <Button
-                onClick={() => void handleSaveGoals()}
-                disabled={draftGoals.length === 0 || savingGoals}
-                className="w-full"
-              >
-                {savingGoals ? "Saving…" : "Save goals"}
-              </Button>
+      <div className="flex flex-col lg:flex-row gap-6">
+        {/* ── Main: day list ──────────────────────────────────────────────── */}
+        <div className="flex-1 min-w-0">
+          {days.length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-slate-500 mb-4">No days planned yet.</p>
+              <Button variant="outline">Start planning your trip</Button>
             </div>
           ) : (
-            <div className="space-y-6">
-              <div>
-                <p className="text-sm font-medium text-slate-700 mb-2">
-                  Your goals
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {goals.map((g) => (
-                    <GoalChip
-                      key={g.id}
-                      label={g.label}
-                      selected
-                      isCustom={!g.isPreset}
-                      onRemove={() => void handleRemoveGoal(g.id)}
-                    />
-                  ))}
+            <div className="space-y-0.5">
+              {renderSlot(0)}
+              {days.map((day, i) => (
+                <div key={day.id}>
+                  <ItineraryDayCard
+                    day={day}
+                    dayNumber={i + 1}
+                    isExpanded={expandedDayId === day.id}
+                    onToggleExpand={() => handleToggleExpand(day.id)}
+                    onRemove={isDemo ? undefined : () => handleRemoveRequest(day.id)}
+                  />
+                  {renderSlot(i + 1)}
                 </div>
-              </div>
-              <ConstraintEditor
-                constraints={constraints}
-                onConstraintsChange={(c) => void handleConstraintsChange(c)}
-              />
+              ))}
+              {validation && (
+                <GoalSuggestionCard
+                  status={validation.status}
+                  message={validation.message}
+                  resolutions={validationResolutions}
+                  onApply={(r) => void handleApplyResolution(r)}
+                  onDismiss={() => setValidation(null)}
+                />
+              )}
             </div>
           )}
         </div>
-      </aside>
-    </div>
+
+        {/* ── Sidebar ─────────────────────────────────────────────────────── */}
+        <aside className="lg:w-72 shrink-0">
+          <button
+            type="button"
+            onClick={() => setSidebarOpen((prev) => !prev)}
+            aria-expanded={sidebarOpen}
+            aria-controls="sidebar-panel"
+            className="lg:hidden w-full flex items-center justify-between px-4 py-3 mb-3 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-700"
+          >
+            Goals &amp; Constraints
+            <span aria-hidden="true">{sidebarOpen ? "▲" : "▼"}</span>
+          </button>
+
+          <div
+            id="sidebar-panel"
+            className={cn(!sidebarOpen && "hidden", "lg:block")}
+          >
+            {goalError && (
+              <p className="text-sm text-red-600 mb-3">{goalError}</p>
+            )}
+            {goals.length === 0 ? (
+              <div className="space-y-4">
+                <GoalSelector
+                  selectedGoals={draftGoals}
+                  onGoalsChange={setDraftGoals}
+                />
+                <Button
+                  onClick={() => void handleSaveGoals()}
+                  disabled={draftGoals.length === 0 || savingGoals}
+                  className="w-full"
+                >
+                  {savingGoals ? "Saving…" : "Save goals"}
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                <div>
+                  <p className="text-sm font-medium text-slate-700 mb-2">
+                    Your goals
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {goals.map((g) => (
+                      <GoalChip
+                        key={g.id}
+                        label={g.label}
+                        selected
+                        isCustom={!g.isPreset}
+                        onRemove={() => void handleRemoveGoal(g.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+                <ConstraintEditor
+                  constraints={constraints}
+                  onConstraintsChange={(c) => void handleConstraintsChange(c)}
+                />
+              </div>
+            )}
+          </div>
+        </aside>
+      </div>
+    </>
   )
 }
