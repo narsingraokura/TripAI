@@ -271,12 +271,28 @@ describe("Delete with undo", () => {
     mockFetchBookings.mockResolvedValue(MOCK_RESPONSE)
   })
 
-  it("removes booking from list and shows UndoToast after delete confirmed", async () => {
+  it("calls deleteBooking immediately on confirm", async () => {
+    mockDeleteBooking.mockResolvedValue(undefined)
     const user = userEvent.setup()
     renderTripView()
     await screen.findByText("Flights SFO → LHR")
 
-    // Click delete then confirm
+    const deleteButtons = screen.getAllByRole("button", { name: /delete/i })
+    await user.click(deleteButtons[0])
+    await user.click(screen.getByRole("button", { name: /confirm/i }))
+
+    // deleteBooking fires on confirm — not deferred to toast expiry
+    await waitFor(() => {
+      expect(mockDeleteBooking).toHaveBeenCalledWith("b1")
+    })
+  })
+
+  it("removes booking from list and shows UndoToast after delete confirmed", async () => {
+    mockDeleteBooking.mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    renderTripView()
+    await screen.findByText("Flights SFO → LHR")
+
     const deleteButtons = screen.getAllByRole("button", { name: /delete/i })
     await user.click(deleteButtons[0])
     await user.click(screen.getByRole("button", { name: /confirm/i }))
@@ -287,7 +303,29 @@ describe("Delete with undo", () => {
     })
   })
 
+  it("calls createBooking on undo click", async () => {
+    mockDeleteBooking.mockResolvedValue(undefined)
+    mockCreateBooking.mockResolvedValue(MOCK_RESPONSE.bookings[0])
+    const user = userEvent.setup()
+    renderTripView()
+    await screen.findByText("Flights SFO → LHR")
+
+    const deleteButtons = screen.getAllByRole("button", { name: /delete/i })
+    await user.click(deleteButtons[0])
+    await user.click(screen.getByRole("button", { name: /confirm/i }))
+
+    await waitFor(() => expect(screen.getByTestId("undo-toast")).toBeInTheDocument())
+
+    await user.click(screen.getByRole("button", { name: /^undo$/i }))
+
+    await waitFor(() => {
+      expect(mockCreateBooking).toHaveBeenCalledTimes(1)
+    })
+  })
+
   it("restores booking when Undo is clicked", async () => {
+    mockDeleteBooking.mockResolvedValue(undefined)
+    mockCreateBooking.mockResolvedValue(MOCK_RESPONSE.bookings[0])
     const user = userEvent.setup()
     renderTripView()
     await screen.findByText("Flights SFO → LHR")
@@ -308,8 +346,9 @@ describe("Delete with undo", () => {
     })
   })
 
-  it("calls deleteBooking API when toast expires", async () => {
+  it("shows error when createBooking fails on undo", async () => {
     mockDeleteBooking.mockResolvedValue(undefined)
+    mockCreateBooking.mockRejectedValue(new Error("Network error"))
     const user = userEvent.setup()
     renderTripView()
     await screen.findByText("Flights SFO → LHR")
@@ -318,36 +357,12 @@ describe("Delete with undo", () => {
     await user.click(deleteButtons[0])
     await user.click(screen.getByRole("button", { name: /confirm/i }))
 
-    await waitFor(() => {
-      expect(screen.getByTestId("undo-toast")).toBeInTheDocument()
-    })
+    await waitFor(() => expect(screen.getByTestId("undo-toast")).toBeInTheDocument())
 
-    await user.click(screen.getByTestId("expire-btn"))
+    await user.click(screen.getByRole("button", { name: /^undo$/i }))
 
     await waitFor(() => {
-      expect(mockDeleteBooking).toHaveBeenCalledWith("b1")
-    })
-  })
-
-  it("restores booking if deleteBooking fails on expiry", async () => {
-    mockDeleteBooking.mockRejectedValue(new Error("Network error"))
-    const user = userEvent.setup()
-    renderTripView()
-    await screen.findByText("Flights SFO → LHR")
-
-    const deleteButtons = screen.getAllByRole("button", { name: /delete/i })
-    await user.click(deleteButtons[0])
-    await user.click(screen.getByRole("button", { name: /confirm/i }))
-
-    await waitFor(() => {
-      expect(screen.getByTestId("undo-toast")).toBeInTheDocument()
-    })
-
-    await user.click(screen.getByTestId("expire-btn"))
-
-    // Booking is restored because the API call failed
-    await waitFor(() => {
-      expect(screen.getByText("Flights SFO → LHR")).toBeInTheDocument()
+      expect(screen.getByText(/could not undo/i)).toBeInTheDocument()
     })
   })
 })
