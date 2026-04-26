@@ -5,7 +5,7 @@ import { DemoBanner } from "@/components/DemoBanner"
 import DayCard from "@/components/itinerary/DayCard"
 import ItineraryView from "@/components/itinerary/ItineraryView"
 import Page from "@/app/trip/page"
-import { fetchBookings, fetchItinerary, patchBookingStatus } from "@/lib/api"
+import { fetchBookings, fetchItinerary, patchBooking } from "@/lib/api"
 import type { ItineraryDay, BookingsResponse } from "@/lib/api"
 
 // ── Mocks ──────────────────────────────────────────────────────────────────────
@@ -13,6 +13,9 @@ import type { ItineraryDay, BookingsResponse } from "@/lib/api"
 jest.mock("@/lib/api", () => ({
   fetchBookings: jest.fn(),
   patchBookingStatus: jest.fn(),
+  patchBooking: jest.fn(),
+  createBooking: jest.fn(),
+  deleteBooking: jest.fn(),
   fetchItinerary: jest.fn(),
   patchItineraryDay: jest.fn(),
   deleteItineraryDay: jest.fn(),
@@ -23,6 +26,17 @@ jest.mock("@/lib/api", () => ({
 jest.mock("@/components/ui/progress", () => ({
   Progress: ({ value }: { value: number }) => (
     <div data-testid="progress-bar" data-value={value} />
+  ),
+}))
+
+jest.mock("@/components/UndoToast", () => ({
+  __esModule: true,
+  default: ({ message, onUndo, onExpire }: { message: string; onUndo: () => void; onExpire: () => void }) => (
+    <div role="status" data-testid="undo-toast">
+      <span>{message}</span>
+      <button onClick={onUndo}>Undo</button>
+      <button onClick={onExpire}>Expire</button>
+    </div>
   ),
 }))
 
@@ -54,7 +68,7 @@ jest.mock("@/components/ui/checkbox", () => ({
 
 const mockFetchBookings = fetchBookings as jest.MockedFunction<typeof fetchBookings>
 const mockFetchItinerary = fetchItinerary as jest.MockedFunction<typeof fetchItinerary>
-const mockPatchBookingStatus = patchBookingStatus as jest.MockedFunction<typeof patchBookingStatus>
+const mockPatchBooking = patchBooking as jest.MockedFunction<typeof patchBooking>
 
 // ── Fixtures ───────────────────────────────────────────────────────────────────
 
@@ -259,7 +273,7 @@ describe("Booking checkboxes in demo mode", () => {
     expect(screen.getByRole("checkbox")).not.toBeDisabled()
   })
 
-  it("clicking disabled checkbox in demo mode does not call patchBookingStatus", async () => {
+  it("clicking disabled checkbox in demo mode does not call patchBooking", async () => {
     process.env.NEXT_PUBLIC_DEMO_MODE = "true"
     mockFetchBookings.mockResolvedValue(MOCK_BOOKING_RESPONSE)
     const user = userEvent.setup()
@@ -270,7 +284,7 @@ describe("Booking checkboxes in demo mode", () => {
     )
     await screen.findByText("Flights SFO → LHR")
     await user.click(screen.getByRole("checkbox"))
-    expect(mockPatchBookingStatus).not.toHaveBeenCalled()
+    expect(mockPatchBooking).not.toHaveBeenCalled()
   })
 })
 

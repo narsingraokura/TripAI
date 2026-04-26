@@ -1,6 +1,6 @@
 import { render, screen, waitFor, fireEvent } from "@testing-library/react"
 import Page from "@/app/trip/page"
-import { fetchBookings, patchBookingStatus } from "@/lib/api"
+import { fetchBookings, patchBooking } from "@/lib/api"
 import type { BookingsResponse } from "@/lib/api"
 
 // ── Mocks ──────────────────────────────────────────────────────────────────────
@@ -8,11 +8,25 @@ import type { BookingsResponse } from "@/lib/api"
 jest.mock("@/lib/api", () => ({
   fetchBookings: jest.fn(),
   patchBookingStatus: jest.fn(),
+  patchBooking: jest.fn(),
+  createBooking: jest.fn(),
+  deleteBooking: jest.fn(),
 }))
 
 jest.mock("@/components/ui/progress", () => ({
   Progress: ({ value }: { value: number }) => (
     <div data-testid="progress-bar" data-value={value} />
+  ),
+}))
+
+jest.mock("@/components/UndoToast", () => ({
+  __esModule: true,
+  default: ({ message, onUndo, onExpire }: { message: string; onUndo: () => void; onExpire: () => void }) => (
+    <div role="status" data-testid="undo-toast">
+      <span>{message}</span>
+      <button onClick={onUndo}>Undo</button>
+      <button onClick={onExpire}>Expire</button>
+    </div>
   ),
 }))
 
@@ -37,8 +51,8 @@ jest.mock("@/components/ui/checkbox", () => ({
 const mockFetchBookings = fetchBookings as jest.MockedFunction<
   typeof fetchBookings
 >
-const mockPatchBookingStatus = patchBookingStatus as jest.MockedFunction<
-  typeof patchBookingStatus
+const mockPatchBooking = patchBooking as jest.MockedFunction<
+  typeof patchBooking
 >
 
 // ── Fixtures ───────────────────────────────────────────────────────────────────
@@ -200,9 +214,9 @@ describe("Success state", () => {
 // ── Toggle (PATCH) ─────────────────────────────────────────────────────────────
 
 describe("Toggle booking status", () => {
-  it("calls patchBookingStatus with correct args when checkbox clicked", async () => {
+  it("calls patchBooking with correct args when checkbox clicked", async () => {
     mockFetchBookings.mockResolvedValue(MOCK_RESPONSE)
-    mockPatchBookingStatus.mockResolvedValue({
+    mockPatchBooking.mockResolvedValue({
       ...MOCK_RESPONSE.bookings[0],
       status: "booked",
     })
@@ -214,13 +228,13 @@ describe("Toggle booking status", () => {
     fireEvent.click(checkboxes[0])
 
     await waitFor(() => {
-      expect(mockPatchBookingStatus).toHaveBeenCalledWith("b1", "booked")
+      expect(mockPatchBooking).toHaveBeenCalledWith("b1", { status: "booked" })
     })
   })
 
-  it("re-fetches bookings after a successful PATCH", async () => {
+  it("updates summary client-side after toggle without re-fetching", async () => {
     mockFetchBookings.mockResolvedValue(MOCK_RESPONSE)
-    mockPatchBookingStatus.mockResolvedValue({
+    mockPatchBooking.mockResolvedValue({
       ...MOCK_RESPONSE.bookings[0],
       status: "booked",
     })
@@ -229,10 +243,14 @@ describe("Toggle booking status", () => {
     await screen.findByText("Flights SFO → LHR")
 
     const checkboxes = screen.getAllByRole("checkbox")
-    fireEvent.click(checkboxes[0])
+    fireEvent.click(checkboxes[0]) // toggle b1 pending → booked
 
+    // booked count should update client-side: was 1/2, now 2/2
     await waitFor(() => {
-      expect(mockFetchBookings).toHaveBeenCalledTimes(2)
+      expect(screen.getByText("Bookings done").closest("div")).toHaveTextContent("2/2")
     })
+
+    // fetchBookings called only once (on mount)
+    expect(mockFetchBookings).toHaveBeenCalledTimes(1)
   })
 })
