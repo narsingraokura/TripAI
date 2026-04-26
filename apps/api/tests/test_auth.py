@@ -196,6 +196,125 @@ def test_patch_booking_with_correct_key_is_not_403() -> None:
     assert resp.status_code != 403
 
 
+def test_post_booking_without_key_returns_403() -> None:
+    client = TestClient(app)
+    resp = client.post(
+        f"/trips/{TRIP_ID}/bookings",
+        json={
+            "title": "Test Hotel",
+            "category": "hotels",
+            "urgency": "now",
+            "status": "pending",
+            "estimated_cost": 500.0,
+        },
+    )
+    assert resp.status_code == 403
+
+
+def test_post_booking_without_key_body_says_admin_key_required() -> None:
+    client = TestClient(app)
+    resp = client.post(
+        f"/trips/{TRIP_ID}/bookings",
+        json={
+            "title": "Test Hotel",
+            "category": "hotels",
+            "urgency": "now",
+            "status": "pending",
+            "estimated_cost": 500.0,
+        },
+    )
+    assert resp.json()["detail"] == "Admin API key required"
+
+
+def test_delete_booking_without_key_returns_403() -> None:
+    client = TestClient(app)
+    resp = client.delete(f"/trips/{TRIP_ID}/bookings/{BOOKING_ID}")
+    assert resp.status_code == 403
+
+
+def _make_post_booking_supabase_mock() -> MagicMock:
+    mock = MagicMock()
+    trip_resp = MagicMock()
+    trip_resp.data = [{"id": TRIP_ID}]
+    new_booking = {
+        "id": "uuid-new",
+        "trip_id": TRIP_ID,
+        "title": "Test Hotel",
+        "subtitle": None,
+        "category": "hotels",
+        "urgency": "now",
+        "status": "pending",
+        "estimated_cost": 500.0,
+        "actual_cost": None,
+        "deadline": None,
+        "discount_code": None,
+        "card_tip": None,
+        "booked_at": None,
+    }
+    insert_resp = MagicMock()
+    insert_resp.data = [new_booking]
+
+    def table_side_effect(table_name: str) -> MagicMock:
+        chain = MagicMock()
+        if table_name == "trips":
+            chain.select.return_value.eq.return_value.execute.return_value = trip_resp
+        else:
+            chain.insert.return_value.execute.return_value = insert_resp
+        return chain
+
+    mock.table.side_effect = table_side_effect
+    return mock
+
+
+def _make_delete_booking_supabase_mock() -> MagicMock:
+    mock = MagicMock()
+    trip_resp = MagicMock()
+    trip_resp.data = [{"id": TRIP_ID}]
+    booking_resp = MagicMock()
+    booking_resp.data = [MOCK_BOOKING]
+    delete_resp = MagicMock()
+    delete_resp.data = []
+
+    def table_side_effect(table_name: str) -> MagicMock:
+        chain = MagicMock()
+        if table_name == "trips":
+            chain.select.return_value.eq.return_value.execute.return_value = trip_resp
+        else:
+            chain.select.return_value.eq.return_value.eq.return_value.execute.return_value = booking_resp
+            chain.delete.return_value.eq.return_value.eq.return_value.execute.return_value = delete_resp
+        return chain
+
+    mock.table.side_effect = table_side_effect
+    return mock
+
+
+def test_post_booking_with_correct_key_is_not_403() -> None:
+    app.dependency_overrides[get_supabase] = lambda: _make_post_booking_supabase_mock()
+    client = TestClient(app)
+    resp = client.post(
+        f"/trips/{TRIP_ID}/bookings",
+        json={
+            "title": "Test Hotel",
+            "category": "hotels",
+            "urgency": "now",
+            "status": "pending",
+            "estimated_cost": 500.0,
+        },
+        headers={"X-API-Key": os.environ["ADMIN_API_KEY"]},
+    )
+    assert resp.status_code != 403
+
+
+def test_delete_booking_with_correct_key_is_not_403() -> None:
+    app.dependency_overrides[get_supabase] = lambda: _make_delete_booking_supabase_mock()
+    client = TestClient(app)
+    resp = client.delete(
+        f"/trips/{TRIP_ID}/bookings/{BOOKING_ID}",
+        headers={"X-API-Key": os.environ["ADMIN_API_KEY"]},
+    )
+    assert resp.status_code != 403
+
+
 # ── Open endpoints: no key needed ─────────────────────────────────────────────
 
 

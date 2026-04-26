@@ -1,19 +1,50 @@
-export type Urgency = "fire" | "now" | "soon"
+export type Urgency = "fire" | "now" | "soon" | "later"
 export type BookingStatus = "pending" | "booked"
+export type BookingCategory =
+  | "flights"
+  | "hotels"
+  | "trains"
+  | "activities"
+  | "food"
+  | "misc"
 
 export type Booking = {
   id: string
   title: string
-  subtitle: string
+  subtitle: string | null
   category: string
   urgency: Urgency
   status: BookingStatus
   estimated_cost: number
   actual_cost: number | null
-  deadline: string
+  deadline: string | null
   discount_code: string | null
-  card_tip: string
+  card_tip: string | null
   booked_at: string | null
+}
+
+export type BookingUpdate = {
+  status?: BookingStatus
+  actual_cost?: number | null
+  estimated_cost?: number
+  title?: string
+  subtitle?: string | null
+  deadline?: string | null
+  discount_code?: string | null
+  card_tip?: string | null
+}
+
+export type BookingCreate = {
+  title: string
+  subtitle?: string | null
+  category: BookingCategory
+  urgency: Urgency
+  status?: BookingStatus
+  estimated_cost: number
+  actual_cost?: number | null
+  deadline?: string | null
+  discount_code?: string | null
+  card_tip?: string | null
 }
 
 export type BookingSummary = {
@@ -58,16 +89,47 @@ export async function patchBookingStatus(
   bookingId: string,
   status: BookingStatus,
 ): Promise<Booking> {
+  return patchBooking(bookingId, { status })
+}
+
+export async function patchBooking(
+  bookingId: string,
+  patch: BookingUpdate,
+): Promise<Booking> {
   const res = await fetch(
     `${getApiBase()}/trips/${getTripId()}/bookings/${bookingId}`,
     {
       method: "PATCH",
       headers: { "Content-Type": "application/json", "X-API-Key": getAdminApiKey() },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify(patch),
     },
   )
   if (!res.ok) throw new Error(`API error: ${res.status}`)
   return res.json() as Promise<Booking>
+}
+
+export async function createBooking(data: BookingCreate): Promise<Booking> {
+  const res = await fetch(
+    `${getApiBase()}/trips/${getTripId()}/bookings`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-API-Key": getAdminApiKey() },
+      body: JSON.stringify(data),
+    },
+  )
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  return res.json() as Promise<Booking>
+}
+
+export async function deleteBooking(bookingId: string): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/trips/${getTripId()}/bookings/${bookingId}`,
+    {
+      method: "DELETE",
+      headers: { "X-API-Key": getAdminApiKey() },
+    },
+  )
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
 }
 
 export type Intensity = "light" | "moderate" | "busy" | "travel" | "special"

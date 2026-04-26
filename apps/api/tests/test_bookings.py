@@ -145,24 +145,28 @@ def test_summary_has_required_fields():
 
 
 def test_summary_total_estimated():
-    # 4800 + 400 + 1200 = 6400
     client = _client_with_mock()
     summary = client.get(f"/trips/{TRIP_ID}/bookings").json()["summary"]
-    assert summary["total_estimated"] == 6400.00
+    expected = sum(b["estimated_cost"] for b in MOCK_BOOKINGS_UNSORTED)
+    assert summary["total_estimated"] == pytest.approx(expected)
 
 
 def test_summary_total_actual():
-    # Only uuid-2 has actual_cost: 380.00
     client = _client_with_mock()
     summary = client.get(f"/trips/{TRIP_ID}/bookings").json()["summary"]
-    assert summary["total_actual"] == 380.00
+    expected = sum(b["actual_cost"] for b in MOCK_BOOKINGS_UNSORTED if b["actual_cost"] is not None)
+    assert summary["total_actual"] == pytest.approx(expected)
 
 
 def test_summary_locked_in():
-    # uuid-2 is booked: actual_cost=380.00
     client = _client_with_mock()
     summary = client.get(f"/trips/{TRIP_ID}/bookings").json()["summary"]
-    assert summary["locked_in"] == 380.00
+    expected = sum(
+        (b["actual_cost"] if b["actual_cost"] is not None else b["estimated_cost"])
+        for b in MOCK_BOOKINGS_UNSORTED
+        if b["status"] == "booked"
+    )
+    assert summary["locked_in"] == pytest.approx(expected)
 
 
 def test_summary_remaining_uses_budget_cap_formula():
@@ -309,6 +313,266 @@ def test_patch_booking_nonexistent_booking_returns_404():
     response = client.patch(
         f"/trips/{TRIP_ID}/bookings/nonexistent-id",
         json={"status": "booked"},
+        headers={"X-API-Key": "test-key-12345"},
+    )
+    assert response.status_code == 404
+
+
+# ── PATCH extended fields ─────────────────────────────────────────────────────
+
+def _make_extended_patch_mock(update_fields: dict) -> MagicMock:
+    """Build a PATCH mock that returns original booking merged with update_fields."""
+    mock = MagicMock()
+
+    trip_response = MagicMock()
+    trip_response.data = [{"id": TRIP_ID}]
+
+    original = MOCK_BOOKINGS_UNSORTED[1]  # uuid-1, fire, pending
+
+    select_response = MagicMock()
+    select_response.data = [original]
+
+    update_response = MagicMock()
+    update_response.data = [{**original, **update_fields}]
+
+    def table_side_effect(table_name: str):
+        chain = MagicMock()
+        if table_name == "trips":
+            chain.select.return_value.eq.return_value.execute.return_value = trip_response
+        else:
+            chain.select.return_value.eq.return_value.eq.return_value.execute.return_value = select_response
+            chain.update.return_value.eq.return_value.eq.return_value.execute.return_value = update_response
+        return chain
+
+    mock.table.side_effect = table_side_effect
+    return mock
+
+
+def test_patch_booking_actual_cost():
+    mock_sb = _make_extended_patch_mock({"actual_cost": 4600.00})
+    app.dependency_overrides[get_supabase] = lambda: mock_sb
+    client = TestClient(app)
+    body = client.patch(
+        f"/trips/{TRIP_ID}/bookings/{BOOKING_ID}",
+        json={"actual_cost": 4600.00},
+        headers={"X-API-Key": "test-key-12345"},
+    ).json()
+    assert body["actual_cost"] == 4600.00
+
+
+def test_patch_booking_estimated_cost():
+    mock_sb = _make_extended_patch_mock({"estimated_cost": 5000.00})
+    app.dependency_overrides[get_supabase] = lambda: mock_sb
+    client = TestClient(app)
+    body = client.patch(
+        f"/trips/{TRIP_ID}/bookings/{BOOKING_ID}",
+        json={"estimated_cost": 5000.00},
+        headers={"X-API-Key": "test-key-12345"},
+    ).json()
+    assert body["estimated_cost"] == 5000.00
+
+
+def test_patch_booking_title():
+    mock_sb = _make_extended_patch_mock({"title": "Updated Title"})
+    app.dependency_overrides[get_supabase] = lambda: mock_sb
+    client = TestClient(app)
+    body = client.patch(
+        f"/trips/{TRIP_ID}/bookings/{BOOKING_ID}",
+        json={"title": "Updated Title"},
+        headers={"X-API-Key": "test-key-12345"},
+    ).json()
+    assert body["title"] == "Updated Title"
+
+
+def test_patch_booking_invalid_field_type_returns_422():
+    client = _patch_client()
+    response = client.patch(
+        f"/trips/{TRIP_ID}/bookings/{BOOKING_ID}",
+        json={"actual_cost": "not-a-number"},
+        headers={"X-API-Key": "test-key-12345"},
+    )
+    assert response.status_code == 422
+
+
+# ── POST /trips/{trip_id}/bookings ────────────────────────────────────────────
+
+NEW_BOOKING = {
+    "id": "uuid-new",
+    "trip_id": TRIP_ID,
+    "title": "Milan Duomo rooftop",
+    "subtitle": "Jul 3 morning",
+    "category": "activities",
+    "urgency": "soon",
+    "status": "pending",
+    "estimated_cost": 80.00,
+    "actual_cost": None,
+    "deadline": "May 2026",
+    "discount_code": None,
+    "card_tip": "Venture X",
+    "booked_at": None,
+}
+
+POST_BODY = {
+    "title": "Milan Duomo rooftop",
+    "subtitle": "Jul 3 morning",
+    "category": "activities",
+    "urgency": "soon",
+    "status": "pending",
+    "estimated_cost": 80.00,
+    "deadline": "May 2026",
+    "card_tip": "Venture X",
+}
+
+
+def _make_post_supabase_mock(trip_found: bool = True) -> MagicMock:
+    mock = MagicMock()
+
+    trip_response = MagicMock()
+    trip_response.data = [{"id": TRIP_ID}] if trip_found else []
+
+    insert_response = MagicMock()
+    insert_response.data = [NEW_BOOKING] if trip_found else []
+
+    def table_side_effect(table_name: str):
+        chain = MagicMock()
+        if table_name == "trips":
+            chain.select.return_value.eq.return_value.execute.return_value = trip_response
+        else:
+            chain.insert.return_value.execute.return_value = insert_response
+        return chain
+
+    mock.table.side_effect = table_side_effect
+    return mock
+
+
+def test_post_booking_returns_201():
+    app.dependency_overrides[get_supabase] = lambda: _make_post_supabase_mock()
+    client = TestClient(app)
+    response = client.post(
+        f"/trips/{TRIP_ID}/bookings",
+        json=POST_BODY,
+        headers={"X-API-Key": "test-key-12345"},
+    )
+    assert response.status_code == 201
+
+
+def test_post_booking_returns_id():
+    app.dependency_overrides[get_supabase] = lambda: _make_post_supabase_mock()
+    client = TestClient(app)
+    body = client.post(
+        f"/trips/{TRIP_ID}/bookings",
+        json=POST_BODY,
+        headers={"X-API-Key": "test-key-12345"},
+    ).json()
+    assert "id" in body
+
+
+def test_post_booking_title_in_response():
+    app.dependency_overrides[get_supabase] = lambda: _make_post_supabase_mock()
+    client = TestClient(app)
+    body = client.post(
+        f"/trips/{TRIP_ID}/bookings",
+        json=POST_BODY,
+        headers={"X-API-Key": "test-key-12345"},
+    ).json()
+    assert body["title"] == POST_BODY["title"]
+
+
+def test_post_booking_missing_title_returns_422():
+    app.dependency_overrides[get_supabase] = lambda: _make_post_supabase_mock()
+    client = TestClient(app)
+    body_no_title = {k: v for k, v in POST_BODY.items() if k != "title"}
+    response = client.post(
+        f"/trips/{TRIP_ID}/bookings",
+        json=body_no_title,
+        headers={"X-API-Key": "test-key-12345"},
+    )
+    assert response.status_code == 422
+
+
+def test_post_booking_invalid_category_returns_422():
+    app.dependency_overrides[get_supabase] = lambda: _make_post_supabase_mock()
+    client = TestClient(app)
+    body_bad_cat = {**POST_BODY, "category": "invalid_category"}
+    response = client.post(
+        f"/trips/{TRIP_ID}/bookings",
+        json=body_bad_cat,
+        headers={"X-API-Key": "test-key-12345"},
+    )
+    assert response.status_code == 422
+
+
+def test_post_booking_nonexistent_trip_returns_404():
+    app.dependency_overrides[get_supabase] = lambda: _make_post_supabase_mock(trip_found=False)
+    client = TestClient(app)
+    response = client.post(
+        f"/trips/{NONEXISTENT_TRIP_ID}/bookings",
+        json=POST_BODY,
+        headers={"X-API-Key": "test-key-12345"},
+    )
+    assert response.status_code == 404
+
+
+# ── DELETE /trips/{trip_id}/bookings/{booking_id} ─────────────────────────────
+
+DELETE_BOOKING_ID = "uuid-3"  # matches MOCK_BOOKINGS_UNSORTED[0]
+
+
+def _make_delete_supabase_mock(
+    trip_found: bool = True,
+    booking_found: bool = True,
+) -> MagicMock:
+    mock = MagicMock()
+
+    trip_response = MagicMock()
+    trip_response.data = [{"id": TRIP_ID}] if trip_found else []
+
+    booking_to_delete = MOCK_BOOKINGS_UNSORTED[0]  # uuid-3
+
+    select_response = MagicMock()
+    select_response.data = [booking_to_delete] if booking_found else []
+
+    delete_response = MagicMock()
+    delete_response.data = []
+
+    def table_side_effect(table_name: str):
+        chain = MagicMock()
+        if table_name == "trips":
+            chain.select.return_value.eq.return_value.execute.return_value = trip_response
+        else:
+            chain.select.return_value.eq.return_value.eq.return_value.execute.return_value = select_response
+            chain.delete.return_value.eq.return_value.eq.return_value.execute.return_value = delete_response
+        return chain
+
+    mock.table.side_effect = table_side_effect
+    return mock
+
+
+def test_delete_booking_returns_204():
+    app.dependency_overrides[get_supabase] = lambda: _make_delete_supabase_mock()
+    client = TestClient(app)
+    response = client.delete(
+        f"/trips/{TRIP_ID}/bookings/{DELETE_BOOKING_ID}",
+        headers={"X-API-Key": "test-key-12345"},
+    )
+    assert response.status_code == 204
+
+
+def test_delete_booking_nonexistent_returns_404():
+    app.dependency_overrides[get_supabase] = lambda: _make_delete_supabase_mock(booking_found=False)
+    client = TestClient(app)
+    response = client.delete(
+        f"/trips/{TRIP_ID}/bookings/nonexistent-id",
+        headers={"X-API-Key": "test-key-12345"},
+    )
+    assert response.status_code == 404
+
+
+def test_delete_booking_nonexistent_trip_returns_404():
+    app.dependency_overrides[get_supabase] = lambda: _make_delete_supabase_mock(trip_found=False)
+    client = TestClient(app)
+    response = client.delete(
+        f"/trips/{NONEXISTENT_TRIP_ID}/bookings/{DELETE_BOOKING_ID}",
         headers={"X-API-Key": "test-key-12345"},
     )
     assert response.status_code == 404
