@@ -151,9 +151,9 @@ class BookingsResponse(BaseModel):
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
-URGENCY_ORDER = {"fire": 0, "now": 1, "soon": 2}
+URGENCY_ORDER = {"fire": 0, "now": 1, "soon": 2, "later": 3}
 
-BUDGET_CAP = 25_000
+BUDGET_CAP = 25_000  # TODO: Read from trips.budget_cap column instead of hardcoding
 
 SUGGEST_SYSTEM_PROMPT = """\
 You are a travel activity advisor for the Kura family Europe 2026 trip.
@@ -241,7 +241,7 @@ def patch_booking(
     if not booking_result.data:
         raise HTTPException(status_code=404, detail=f"Booking {booking_id} not found")
 
-    update_data = {k: v for k, v in update.model_dump().items() if v is not None}
+    update_data = update.model_dump(exclude_none=True)
     update_result = (
         supabase.table("bookings")
         .update(update_data)

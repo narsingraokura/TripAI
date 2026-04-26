@@ -17,6 +17,7 @@ import BookingRow from "@/components/BookingRow"
 import AddBookingForm from "@/components/AddBookingForm"
 import UndoToast from "@/components/UndoToast"
 
+// TODO: Read from trips.budget_cap column instead of hardcoding
 const BUDGET_CAP = 25_000
 
 const URGENCY_ORDER: Record<Urgency, number> = { fire: 0, now: 1, soon: 2, later: 3 }
